@@ -1,0 +1,33 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "InterviewScribe",
+  "version": "0.1.0",
+  "identifier": "com.guillaumeboileau.interviewscribe",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "InterviewScribe",
+        "width": 1180,
+        "height": 780,
+        "minWidth": 360,
+        "minHeight": 640
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "shortDescription": "Transcription locale d'entretiens",
+    "longDescription": "Transcription locale en temps reel ou a posteriori avec separation des intervenants."
+  }
+}
+

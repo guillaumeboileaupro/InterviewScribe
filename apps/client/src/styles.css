@@ -1,0 +1,45 @@
+:root {
+  color: #171a21;
+  background: #f6f7f9;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 320px; min-height: 100vh; }
+button { font: inherit; }
+.shell { width: min(1080px, calc(100% - 40px)); margin: 0 auto; padding: 56px 0; }
+.topbar, .actions, .sectionTitle, .buttonRow { display: flex; align-items: center; }
+.topbar, .actions, .sectionTitle { justify-content: space-between; gap: 32px; }
+.eyebrow { color: #3156a3; font-size: .82rem; font-weight: 750; letter-spacing: .12em; margin: 0 0 12px; text-transform: uppercase; }
+h1 { font-size: clamp(2rem, 5vw, 3.6rem); letter-spacing: -.045em; line-height: 1.02; margin: 0; max-width: 720px; }
+h2, h3, p { margin-top: 0; }
+h2 { letter-spacing: -.025em; }
+.actions, .recent { background: #fff; border: 1px solid #e3e6eb; border-radius: 18px; margin-top: 48px; padding: 28px; }
+.actions p, .emptyState p { color: #606775; margin-bottom: 0; }
+.buttonRow { gap: 12px; }
+button { border-radius: 10px; cursor: pointer; min-height: 44px; padding: 0 18px; }
+.primary { background: #3156a3; border: 1px solid #3156a3; color: #fff; }
+.secondary { background: #fff; border: 1px solid #cfd4dc; color: #242933; }
+button:focus-visible { outline: 3px solid #9ab6ef; outline-offset: 2px; }
+.sectionTitle span { color: #687080; font-size: .9rem; }
+.emptyState { border: 1px dashed #cfd4dc; border-radius: 14px; margin-top: 24px; padding: 64px 24px; text-align: center; }
+.emptyIcon { align-items: center; background: #eef2fb; border-radius: 50%; color: #3156a3; display: inline-flex; font-weight: 750; height: 48px; justify-content: center; margin-bottom: 18px; width: 48px; }
+
+@media (max-width: 720px) {
+  .shell { width: min(100% - 24px, 1080px); padding: 28px 0; }
+  .topbar, .actions { align-items: stretch; flex-direction: column; }
+  .actions { margin-top: 32px; }
+  .buttonRow { align-items: stretch; flex-direction: column; }
+  .buttonRow button { width: 100%; }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root { color: #eff1f5; background: #111318; }
+  .actions, .recent, .secondary { background: #191c23; border-color: #343945; color: #eff1f5; }
+  .emptyState { border-color: #454b58; }
+  .actions p, .emptyState p, .sectionTitle span { color: #aeb5c2; }
+  .emptyIcon { background: #202a40; color: #a9c2fa; }
+}
+
