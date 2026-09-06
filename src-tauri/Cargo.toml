@@ -16,4 +16,13 @@ tauri-build = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = [] }
+whisper-rs = "0.16"
+rusqlite = { version = "0.40", features = ["bundled"] }
+thiserror = "2"
+symphonia = { version = "0.6", features = ["mp3", "aac", "isomp4"] }
+rubato = "5"
+sha2 = "0.10"
+tauri-plugin-dialog = "2"
 
+[target.'cfg(target_os = "android")'.dependencies]
+tauri-plugin-fs = "2"

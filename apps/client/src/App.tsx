@@ -1,4 +1,17 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { open, save } from "@tauri-apps/plugin-dialog";
+import {
+  ensureWhisperModel,
+  exportInterview,
+  getInterview,
+  importInterview,
+  listInterviews,
+  transcribeInterview,
+  type ExportFormat,
+  type Interview,
+  type InterviewDetail,
+  type ModelStatus,
+} from "./api";
 
 const logo = new URL(
   "../../../assets/interviewscribe-logo.svg",
@@ -26,13 +39,111 @@ const example = [
     text: "La qualité des échanges. Prendre le temps de comprendre les autres change vraiment la manière de travailler.",
   },
 ];
-type Page = "library" | "example" | "settings" | "prepare";
+type Page = "library" | "example" | "settings" | "prepare" | "interview";
+
+function formatTimestamp(ms: number): string {
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
 
 export default function App() {
   const [page, setPage] = useState<Page>("library");
   const [timestamps, setTimestamps] = useState(true);
   const [theme, setTheme] = useState("system");
   const [source, setSource] = useState("microphone");
+
+  const [interviews, setInterviews] = useState<Interview[]>([]);
+  const [currentInterview, setCurrentInterview] =
+    useState<InterviewDetail | null>(null);
+
+  const [prepareTitle, setPrepareTitle] = useState("");
+  const [prepareBusy, setPrepareBusy] = useState(false);
+  const [prepareError, setPrepareError] = useState<string | null>(null);
+
+  const [modelStatus, setModelStatus] = useState<ModelStatus | null>(null);
+  const [modelError, setModelError] = useState<string | null>(null);
+
+  const refreshInterviews = () => {
+    listInterviews()
+      .then(setInterviews)
+      .catch(() => setInterviews([]));
+  };
+
+  useEffect(() => {
+    refreshInterviews();
+  }, []);
+
+  useEffect(() => {
+    if (page === "settings") {
+      ensureWhisperModel()
+        .then(setModelStatus)
+        .catch((err) => setModelError(String(err)));
+    }
+  }, [page]);
+
+  const openInterview = (interviewId: number) => {
+    getInterview(interviewId)
+      .then((detail) => {
+        setCurrentInterview(detail);
+        setPage("interview");
+      })
+      .catch((err) => setPrepareError(String(err)));
+  };
+
+  const importAndTranscribe = async () => {
+    setPrepareError(null);
+    setPrepareBusy(true);
+    try {
+      const status = await ensureWhisperModel();
+      setModelStatus(status);
+      const selected = await open({
+        multiple: false,
+        filters: [
+          {
+            name: "Audio",
+            extensions: ["wav", "mp3", "m4a", "flac", "ogg", "aac"],
+          },
+        ],
+      });
+      if (!selected || Array.isArray(selected)) return;
+      const fileName = selected.split(/[/\\]/).pop() ?? selected;
+      const interview = await importInterview(
+        prepareTitle.trim() || fileName,
+        selected,
+      );
+      refreshInterviews();
+      const detail = await transcribeInterview(interview.id);
+      setCurrentInterview(detail);
+      setPage("interview");
+    } catch (err) {
+      setPrepareError(String(err));
+    } finally {
+      refreshInterviews();
+      setPrepareBusy(false);
+    }
+  };
+
+  const handleExport = async (format: ExportFormat) => {
+    if (!currentInterview) return;
+    const extension = format === "markdown" ? "md" : format;
+    const destination = await save({
+      defaultPath: `${currentInterview.interview.title}.${extension}`,
+    });
+    if (!destination) return;
+    try {
+      await exportInterview(
+        currentInterview.interview.id,
+        format,
+        timestamps,
+        destination,
+      );
+    } catch (err) {
+      setPrepareError(String(err));
+    }
+  };
+
   return (
     <div className="app" data-theme={theme}>
       <a className="skipLink" href="#content">
@@ -91,6 +202,17 @@ export default function App() {
           <span className="badge">Traitement local par défaut</span>
         </header>
         <main id="content" tabIndex={-1}>
+          {prepareBusy && (
+            <div className="notice" role="status">
+              Préparation ou transcription locale en cours… L’audio reste sur
+              cet appareil.
+            </div>
+          )}
+          {prepareError && (
+            <div className="notice" role="alert">
+              {prepareError}
+            </div>
+          )}
           {page === "library" && (
             <>
               <div className="pageHeading">
@@ -103,6 +225,8 @@ export default function App() {
                   className="primary"
                   onClick={() => {
                     setSource("microphone");
+                    setPrepareTitle("");
+                    setPrepareError(null);
                     setPage("prepare");
                   }}
                 >
@@ -126,6 +250,8 @@ export default function App() {
                     className="secondary"
                     onClick={() => {
                       setSource("file");
+                      setPrepareTitle("");
+                      setPrepareError(null);
                       setPage("prepare");
                     }}
                   >
@@ -153,27 +279,47 @@ export default function App() {
               <section className="library" aria-labelledby="recent-title">
                 <div className="sectionTitle">
                   <h2 id="recent-title">
-                    Entretiens récents <span className="count">0</span>
+                    Entretiens récents{" "}
+                    <span className="count">{interviews.length}</span>
                   </h2>
-                  <span>Aucun entretien enregistré</span>
-                </div>
-                <div className="emptyState">
-                  <span className="emptyMark" aria-hidden="true">
-                    ▤
+                  <span>
+                    {interviews.length === 0
+                      ? "Aucun entretien enregistré"
+                      : `${interviews.length} entretien(s)`}
                   </span>
-                  <h3>Votre prochain échange commence ici.</h3>
-                  <p>
-                    Vos entretiens apparaîtront dans cet espace.
-                    <br />
-                    En attendant, explorez un exemple de transcription.
-                  </p>
-                  <button
-                    className="textButton"
-                    onClick={() => setPage("example")}
-                  >
-                    Découvrir l’éditeur <span aria-hidden="true">→</span>
-                  </button>
                 </div>
+                {interviews.length === 0 ? (
+                  <div className="emptyState">
+                    <span className="emptyMark" aria-hidden="true">
+                      ▤
+                    </span>
+                    <h3>Votre prochain échange commence ici.</h3>
+                    <p>
+                      Vos entretiens apparaîtront dans cet espace.
+                      <br />
+                      En attendant, explorez un exemple de transcription.
+                    </p>
+                    <button
+                      className="textButton"
+                      onClick={() => setPage("example")}
+                    >
+                      Découvrir l’éditeur <span aria-hidden="true">→</span>
+                    </button>
+                  </div>
+                ) : (
+                  <ul>
+                    {interviews.map((interview) => (
+                      <li key={interview.id}>
+                        <button
+                          className="textButton"
+                          onClick={() => openInterview(interview.id)}
+                        >
+                          {interview.title} — {interview.status}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </section>
               <footer>
                 Texte brut préservé <span>·</span> Nettoyage réversible{" "}
@@ -197,9 +343,8 @@ export default function App() {
                 </button>
               </div>
               <div className="notice">
-                Cet exemple présente la lecture d’une transcription. L’édition,
-                le nettoyage et l’export seront disponibles avec le moteur de
-                transcription.
+                Cet exemple présente la lecture d’une transcription. L’édition
+                et le nettoyage seront disponibles avec les phases suivantes.
               </div>
               <section className="transcript">
                 <div className="transcriptToolbar">
@@ -233,6 +378,89 @@ export default function App() {
               </section>
             </>
           )}
+          {page === "interview" && currentInterview && (
+            <>
+              <div className="pageHeading">
+                <div>
+                  <p className="eyebrow">ENTRETIEN</p>
+                  <h1>{currentInterview.interview.title}</h1>
+                  <p>Statut : {currentInterview.interview.status}</p>
+                </div>
+                <button
+                  className="secondary"
+                  onClick={() => setPage("library")}
+                >
+                  Retour aux entretiens
+                </button>
+              </div>
+              {currentInterview.interview.status === "error" && (
+                <div className="notice" role="status">
+                  Une erreur est survenue :{" "}
+                  {currentInterview.interview.error_message}
+                </div>
+              )}
+              <section className="transcript">
+                <div className="transcriptToolbar">
+                  <strong>Transcription brute</strong>
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={timestamps}
+                      onChange={(event) => setTimestamps(event.target.checked)}
+                    />{" "}
+                    Horodatages
+                  </label>
+                </div>
+                {currentInterview.segments.length === 0 ? (
+                  <p className="muted">Aucun segment pour le moment.</p>
+                ) : (
+                  currentInterview.segments.map((segment) => {
+                    const speaker = currentInterview.speakers.find(
+                      (candidate) => candidate.id === segment.speaker_id,
+                    );
+                    return (
+                      <article className="segment" key={segment.id}>
+                        <div className="segmentMeta">
+                          {timestamps && (
+                            <time>{formatTimestamp(segment.start_ms)}</time>
+                          )}
+                          <span className="speaker">
+                            {speaker?.display_name ??
+                              speaker?.label ??
+                              "Intervenant"}
+                          </span>
+                        </div>
+                        <p>{segment.raw_text}</p>
+                      </article>
+                    );
+                  })
+                )}
+              </section>
+              <section className="settingsPanel">
+                <h2>Export</h2>
+                <div className="buttonRow">
+                  <button
+                    className="secondary"
+                    onClick={() => handleExport("txt")}
+                  >
+                    Exporter en TXT
+                  </button>
+                  <button
+                    className="secondary"
+                    onClick={() => handleExport("markdown")}
+                  >
+                    Exporter en Markdown
+                  </button>
+                  <button
+                    className="secondary"
+                    onClick={() => handleExport("json")}
+                  >
+                    Exporter en JSON
+                  </button>
+                </div>
+              </section>
+            </>
+          )}
           {page === "prepare" && (
             <>
               <div className="pageHeading">
@@ -262,16 +490,36 @@ export default function App() {
                     <option value="file">Importer un fichier audio</option>
                   </select>
                 </label>
-                <div className="notice" role="status">
-                  {source === "microphone"
-                    ? "La capture microphone"
-                    : "L’import audio"}{" "}
-                  n’est pas encore disponible dans cette version. Aucun
-                  enregistrement n’est lancé.
-                </div>
-                <button className="primary" onClick={() => setPage("example")}>
-                  Explorer un exemple
-                </button>
+                {source === "file" ? (
+                  <>
+                    <label className="field">
+                      Titre de l’entretien (optionnel)
+                      <input
+                        type="text"
+                        value={prepareTitle}
+                        onChange={(event) =>
+                          setPrepareTitle(event.target.value)
+                        }
+                        placeholder="Sans titre reprend le nom du fichier"
+                      />
+                    </label>
+
+                    <button
+                      className="primary"
+                      disabled={prepareBusy}
+                      onClick={importAndTranscribe}
+                    >
+                      {prepareBusy
+                        ? "Transcription en cours…"
+                        : "Choisir un fichier audio"}
+                    </button>
+                  </>
+                ) : (
+                  <div className="notice" role="status">
+                    La capture microphone n’est pas encore disponible dans cette
+                    version. Aucun enregistrement n’est lancé.
+                  </div>
+                )}
               </section>
             </>
           )}
@@ -303,13 +551,28 @@ export default function App() {
               </section>
               <section className="settingsPanel">
                 <h2>Modèles et stockage</h2>
-                <p>
-                  La gestion des modèles locaux et du stockage sera disponible
-                  avec le moteur de transcription.
-                </p>
+                {modelError && (
+                  <div className="notice" role="status">
+                    {modelError}
+                  </div>
+                )}
+                {modelStatus?.state === "Ready" && (
+                  <>
+                    <p>
+                      <strong>{modelStatus.name}</strong>
+                    </p>
+                    <p>
+                      Inclus dans l’application · {modelStatus.size_mb} Mo ·
+                      Prêt à transcrire hors connexion.
+                    </p>
+                  </>
+                )}
+                {!modelStatus && !modelError && (
+                  <p role="status">Vérification du modèle intégré…</p>
+                )}
                 <p className="muted">
-                  Le téléchargement d’un modèle nécessitera votre accord
-                  explicite.
+                  Aucun téléchargement à effectuer. Le modèle est fourni avec
+                  l’installation ; vos fichiers audio restent sur cet appareil.
                 </p>
               </section>
             </>

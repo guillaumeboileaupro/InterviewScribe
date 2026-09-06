@@ -22,6 +22,7 @@ jobs:
       - run: pnpm lint
       - run: pnpm format:check
       - run: pnpm test
+      - run: pnpm test:packaging
       - run: pnpm build
 
   rust:
@@ -29,7 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Tauri system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf cmake clang
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy

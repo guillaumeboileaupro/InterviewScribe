@@ -9,13 +9,19 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "android:dev": "bash scripts/tauri-android.sh dev",
+    "android:build": "bash scripts/tauri-android.sh build --apk",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "models:prepare": "node scripts/prepare-model.mjs --download",
+    "models:verify": "node scripts/prepare-model.mjs",
+    "test:packaging": "node --test scripts/prepare-model.test.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-dialog": "^2.7.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

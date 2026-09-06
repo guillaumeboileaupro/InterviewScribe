@@ -25,3 +25,6 @@ src-tauri/gen/
 AGENTS.md
 CLAUDE.md
 
+
+# Temporary model downloads
+*.bin.part

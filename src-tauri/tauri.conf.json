@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build",
+    "beforeBuildCommand": "pnpm models:verify && pnpm build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -34,6 +34,9 @@
       "icons/icon.ico"
     ],
     "shortDescription": "Transcription locale d'entretiens",
-    "longDescription": "Transcription locale en temps reel ou a posteriori avec separation des intervenants."
+    "longDescription": "Transcription locale en temps reel ou a posteriori avec separation des intervenants.",
+    "resources": {
+      "resources/models/": "models/"
+    }
   }
 }
