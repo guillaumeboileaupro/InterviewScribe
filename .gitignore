@@ -19,3 +19,9 @@ src-tauri/gen/
 .env.*
 !.env.example
 
+# Config agents / IA (usage local uniquement, hors depot)
+.claude/
+.agents/
+AGENTS.md
+CLAUDE.md
+
