@@ -23,6 +23,10 @@ symphonia = { version = "0.6", features = ["mp3", "aac", "isomp4"] }
 rubato = "5"
 sha2 = "0.10"
 tauri-plugin-dialog = "2"
+regex = "1"
+docx-rs = "0.4"
+genpdf = "0.2"
+which = "8"
 
 [target.'cfg(target_os = "android")'.dependencies]
 tauri-plugin-fs = "2"

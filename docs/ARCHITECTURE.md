@@ -70,6 +70,31 @@ Whisper ne distingue pas a lui seul les personnes. La diarisation doit exposer u
 - L'absence du convertisseur ne doit jamais bloquer les autres formats: seul l'export DOC est indisponible, avec un message clair a l'utilisateur.
 - Le format d'export est un choix explicite de l'utilisateur, independant du format de capture ou d'import.
 
+### Implementation (Phase 2, 6 septembre 2026)
+
+- DOCX: `docx-rs` 0.4. Le paquetage exige un `std::io::Cursor<Vec<u8>>` (pas un
+  `Vec<u8>` seul, qui n'implemente pas `Seek`).
+- PDF: `genpdf` 0.2 avec les polices DejaVu Sans (regulier + gras) embarquees
+  via `include_bytes!` (`src-tauri/resources/fonts/`, ~1,46 Mo, licence
+  permissive Bitstream Vera/DejaVu, commitees directement comme le logo — pas
+  comme le modele Whisper). Verifie avec `pdfinfo`/`pdftotext`: pagination
+  automatique correcte, accents francais corrects dans le corps du texte.
+  `genpdf` n'est plus maintenu depuis 2021 (dependance `printpdf` 0.3.4
+  epinglee): risque accepte pour une tache d'ecriture de document hors-ligne
+  sans entree non fiable; repli documente si besoin futur: `printpdf` 0.12
+  (activement maintenu) et son mode HTML-to-PDF. Limite connue: la metadonnee
+  "Titre" du PDF mal-encode les caracteres accentues (bug de `printpdf` 0.3.4
+  independant du rendu du corps du texte, qui lui est correct) — volontairement
+  omise plutot que de livrer une metadonnee corrompue.
+- DOC: pas de bibliotheque Rust pour ecrire le format binaire historique.
+  Genere le DOCX puis lance `soffice --headless --convert-to doc` (verifie
+  localement: ~2,4s, produit un vrai fichier OLE "MS Word 97", signature
+  `D0 CF 11 E0 A1 B1 1A E1`). Detection via la crate `which`; absence de
+  `soffice` -> message clair, n'affecte jamais les autres formats. Le frontend
+  interroge la disponibilite au chargement de la page pour griser le bouton
+  proactivement plutot que d'echouer silencieusement.
+- SRT/VTT: aucune dependance, formats texte simples.
+
 ## Securite et confidentialite
 
 - Aucun enregistrement ou texte dans les journaux.
@@ -86,6 +111,15 @@ Le modele par defaut est **Whisper Large v3 Turbo multilingue quantifie Q5_0**
 sa taille et son empreinte SHA-256 sont epinglees dans
 `src-tauri/resources/models/manifest.json`. La licence MIT de Whisper est livree
 avec le modele.
+
+Turbo est le variant qu'OpenAI a specifiquement concu pour etre rapide tout en
+restant multilingue: d'apres le depot officiel OpenAI, Turbo tourne environ
+8x plus vite que Large (809M parametres contre 1550M), la ou les variants
+plus petits et plus rapides (Tiny, Base, Small) sont limites a l'anglais.
+C'est le compromis vitesse/qualite retenu pour ce projet, confirme lors de
+l'echange avec l'utilisateur du 06/09/2026 ("je veux juste une version locale
+qui tourne vite et assez bonne") -> decision de garder Large v3 Turbo plutot
+que de redescendre vers Small.
 
 Les paquets Windows, Linux et Android incluent le modele dans les ressources
 Tauri. L’application ne telecharge aucun modele : le producteur du paquet lance
@@ -122,7 +156,9 @@ sont pas encore copiees par Tauri, le moteur cherche le modele dans le dossier
 source `src-tauri/resources/models`. Ce repli est absent des versions release.
 
 Sources : [modeles whisper.cpp](https://github.com/ggml-org/whisper.cpp/blob/master/models/README.md),
-[ressources Tauri](https://v2.tauri.app/develop/resources/).
+[ressources Tauri](https://v2.tauri.app/develop/resources/),
+[depot officiel OpenAI Whisper](https://github.com/openai/whisper) (tailles de
+modeles, vitesses relatives et licence MIT d'origine).
 
 ### Validation du modele integre (6 septembre 2026)
 
@@ -134,3 +170,48 @@ Sources : [modeles whisper.cpp](https://github.com/ggml-org/whisper.cpp/blob/mas
 - Installation neuve, extraction et inference sur appareil Android, ainsi que validation Windows, restent a effectuer.
 
 Ces artefacts debug sont des paquets de validation, pas une publication signee.
+
+### Validation accents et bruit (6 septembre 2026)
+
+Passage manuel avec Large v3 Turbo Q5_0 sur CPU Linux, sur des enregistrements
+publics (domaine public LibriVox, jamais ajoutes au depot, cf. AGENTS.md) via
+l'outil `whisper_qa_sample` (`src-tauri/src/transcription/whisper_cpp.rs`,
+`cargo test -- --ignored --nocapture whisper_qa_sample`):
+
+- **Francais quebecois** (Filiatreault, *Contes, anecdotes et recits
+  canadiens*, lu par une locutrice quebecoise): transcription quasi parfaite,
+  confiance >0.9998 sur l'ensemble du passage.
+- **Francais standard/europeen** (Chateaubriand, *Voyage en Italie*, texte
+  litteraire du XIXe siecle avec citations latines): transcription quasi
+  parfaite sur le francais; seules les citations en latin sont degradees
+  (attendu, ce n'est pas la langue cible).
+- **Bruit synthetique** (bruit blanc mixe numeriquement au signal propre, a un
+  rapport signal/bruit controle, plutot que de chercher des enregistrements
+  bruites reels sans texte de reference): a 10 dB SNR (bruit de fond notable),
+  aucune degradation mesurable. A 0 dB SNR (bruit aussi fort que la voix),
+  degradation progressive et localisee en fin de passage plutot
+  qu'un echec brutal — la premiere moitie du texte reste quasi intacte.
+- Une etude independante du CNRS sur la transcription d'entretiens avec
+  Whisper (source ci-dessous) mesure des taux d'erreur de 1,4 a 3,5% avec
+  `large-v2` contre 5,8 a 8,1% avec `small` et 10,5 a 14,3% avec `base` sur des
+  entretiens reels (studio et micro-trottoir bruite). Ceci confirme
+  empiriquement le choix de conserver un modele de categorie Large (Turbo)
+  plutot que de redescendre vers un modele plus petit pour la vitesse.
+
+**Limite connue de Whisper, a garder en tete pour l'invariant "texte brut
+jamais reecrit" (AGENTS.md):** Whisper n'est pas un transcripteur mot-a-mot.
+D'apres la meme etude CNRS, il omet couramment les hesitations, les relances
+rapides et interruptions, et certains mots de liaison; il confond parfois des
+noms propres. On observe aussi, en fin de passage sur silence ou bruit fort,
+une hallucination connue du modele (ici "Sous-titrage Societe Radio-Canada",
+absente de l'enregistrement d'origine). La transcription "brute" stockee dans
+`segment.raw_text` est donc le brut *de Whisper*, pas un verbatim absolu de
+l'audio — a documenter clairement pour l'utilisateur plutot que de laisser
+croire a une fidelite parfaite.
+
+Non teste dans cette passe: accents africains/belges/suisses (aucune source
+publique fiable identifiee rapidement) et bruit non-blanc (brouhaha de
+conversation, musique).
+
+Sources : [CNRS CSS — Whisper pour retranscrire des entretiens](https://www.css.cnrs.fr/whisper-pour-retranscrire-des-entretiens/),
+[LibriVox](https://librivox.org/) via [Internet Archive](https://archive.org/details/librivoxaudio) (enregistrements du domaine public utilises pour ce test, non conserves).

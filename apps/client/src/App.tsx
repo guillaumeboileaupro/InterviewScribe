@@ -1,16 +1,23 @@
 import { useEffect, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
+  applySegmentCleanup,
+  checkDocExportAvailable,
   ensureWhisperModel,
   exportInterview,
+  exportInterviewDoc,
   getInterview,
   importInterview,
   listInterviews,
+  saveSegmentEdit,
   transcribeInterview,
+  undoSegmentEdit,
+  type DiffPart,
   type ExportFormat,
   type Interview,
   type InterviewDetail,
   type ModelStatus,
+  type Segment,
 } from "./api";
 
 const logo = new URL(
@@ -65,6 +72,15 @@ export default function App() {
   const [modelStatus, setModelStatus] = useState<ModelStatus | null>(null);
   const [modelError, setModelError] = useState<string | null>(null);
 
+  const [showCleaned, setShowCleaned] = useState(false);
+  const [cleanupDiffs, setCleanupDiffs] = useState<Record<number, DiffPart[]>>(
+    {},
+  );
+  const [editingSegmentId, setEditingSegmentId] = useState<number | null>(null);
+  const [draftText, setDraftText] = useState("");
+  const [interviewError, setInterviewError] = useState<string | null>(null);
+  const [docAvailable, setDocAvailable] = useState(false);
+
   const refreshInterviews = () => {
     listInterviews()
       .then(setInterviews)
@@ -80,6 +96,11 @@ export default function App() {
       ensureWhisperModel()
         .then(setModelStatus)
         .catch((err) => setModelError(String(err)));
+    }
+    if (page === "interview") {
+      checkDocExportAvailable()
+        .then(setDocAvailable)
+        .catch(() => setDocAvailable(false));
     }
   }, [page]);
 
@@ -137,10 +158,95 @@ export default function App() {
         currentInterview.interview.id,
         format,
         timestamps,
+        showCleaned,
         destination,
       );
     } catch (err) {
       setPrepareError(String(err));
+    }
+  };
+
+  const handleExportDoc = async () => {
+    if (!currentInterview) return;
+    const destination = await save({
+      defaultPath: `${currentInterview.interview.title}.doc`,
+    });
+    if (!destination) return;
+    try {
+      await exportInterviewDoc(
+        currentInterview.interview.id,
+        timestamps,
+        showCleaned,
+        destination,
+      );
+    } catch (err) {
+      setPrepareError(String(err));
+    }
+  };
+
+  const updateSegmentInPlace = (updated: Segment) => {
+    setCurrentInterview((detail) =>
+      detail
+        ? {
+            ...detail,
+            segments: detail.segments.map((segment) =>
+              segment.id === updated.id ? updated : segment,
+            ),
+          }
+        : detail,
+    );
+  };
+
+  const handleCleanup = async (segmentId: number) => {
+    setInterviewError(null);
+    try {
+      const { segment, outcome } = await applySegmentCleanup(segmentId);
+      updateSegmentInPlace(segment);
+      setCleanupDiffs((diffs) => ({ ...diffs, [segmentId]: outcome.parts }));
+    } catch (err) {
+      setInterviewError(String(err));
+    }
+  };
+
+  const handleUndo = async (segmentId: number) => {
+    setInterviewError(null);
+    try {
+      const segment = await undoSegmentEdit(segmentId);
+      updateSegmentInPlace(segment);
+      setCleanupDiffs((diffs) => {
+        const next = { ...diffs };
+        delete next[segmentId];
+        return next;
+      });
+    } catch (err) {
+      setInterviewError(String(err));
+    }
+  };
+
+  const startEditingSegment = (segment: Segment) => {
+    setEditingSegmentId(segment.id);
+    setDraftText(segment.current_text);
+  };
+
+  const cancelEditingSegment = () => {
+    setEditingSegmentId(null);
+    setDraftText("");
+  };
+
+  const saveEditingSegment = async () => {
+    if (editingSegmentId === null) return;
+    setInterviewError(null);
+    try {
+      const segment = await saveSegmentEdit(editingSegmentId, draftText);
+      updateSegmentInPlace(segment);
+      setCleanupDiffs((diffs) => {
+        const next = { ...diffs };
+        delete next[segment.id];
+        return next;
+      });
+      cancelEditingSegment();
+    } catch (err) {
+      setInterviewError(String(err));
     }
   };
 
@@ -399,9 +505,16 @@ export default function App() {
                   {currentInterview.interview.error_message}
                 </div>
               )}
+              {interviewError && (
+                <div className="notice" role="alert">
+                  {interviewError}
+                </div>
+              )}
               <section className="transcript">
                 <div className="transcriptToolbar">
-                  <strong>Transcription brute</strong>
+                  <strong>
+                    {showCleaned ? "Version nettoyée" : "Transcription brute"}
+                  </strong>
                   <label className="check">
                     <input
                       type="checkbox"
@@ -409,6 +522,14 @@ export default function App() {
                       onChange={(event) => setTimestamps(event.target.checked)}
                     />{" "}
                     Horodatages
+                  </label>
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={showCleaned}
+                      onChange={(event) => setShowCleaned(event.target.checked)}
+                    />{" "}
+                    Version nettoyée
                   </label>
                 </div>
                 {currentInterview.segments.length === 0 ? (
@@ -418,6 +539,8 @@ export default function App() {
                     const speaker = currentInterview.speakers.find(
                       (candidate) => candidate.id === segment.speaker_id,
                     );
+                    const isEdited = segment.current_text !== segment.raw_text;
+                    const diffParts = cleanupDiffs[segment.id];
                     return (
                       <article className="segment" key={segment.id}>
                         <div className="segmentMeta">
@@ -430,7 +553,79 @@ export default function App() {
                               "Intervenant"}
                           </span>
                         </div>
-                        <p>{segment.raw_text}</p>
+                        {editingSegmentId === segment.id ? (
+                          <>
+                            <textarea
+                              value={draftText}
+                              onChange={(event) =>
+                                setDraftText(event.target.value)
+                              }
+                              rows={3}
+                              style={{ width: "100%" }}
+                            />
+                            <div className="buttonRow">
+                              <button
+                                className="primary"
+                                onClick={saveEditingSegment}
+                              >
+                                Enregistrer
+                              </button>
+                              <button
+                                className="secondary"
+                                onClick={cancelEditingSegment}
+                              >
+                                Annuler la saisie
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            {showCleaned && diffParts ? (
+                              <p>
+                                {diffParts.map((part, index) =>
+                                  part.kept ? (
+                                    <span key={index}>{part.text}</span>
+                                  ) : (
+                                    <del
+                                      key={index}
+                                      className="removedSpan"
+                                      title={part.reason ?? undefined}
+                                    >
+                                      {part.text}
+                                    </del>
+                                  ),
+                                )}
+                              </p>
+                            ) : (
+                              <p>
+                                {showCleaned
+                                  ? segment.current_text
+                                  : segment.raw_text}
+                              </p>
+                            )}
+                            <div className="buttonRow">
+                              <button
+                                className="textButton"
+                                onClick={() => startEditingSegment(segment)}
+                              >
+                                Modifier
+                              </button>
+                              <button
+                                className="textButton"
+                                onClick={() => handleCleanup(segment.id)}
+                              >
+                                Nettoyer
+                              </button>
+                              <button
+                                className="textButton"
+                                disabled={!isEdited}
+                                onClick={() => handleUndo(segment.id)}
+                              >
+                                Annuler
+                              </button>
+                            </div>
+                          </>
+                        )}
                       </article>
                     );
                   })
@@ -457,7 +652,44 @@ export default function App() {
                   >
                     Exporter en JSON
                   </button>
+                  <button
+                    className="secondary"
+                    onClick={() => handleExport("srt")}
+                  >
+                    Exporter en SRT
+                  </button>
+                  <button
+                    className="secondary"
+                    onClick={() => handleExport("vtt")}
+                  >
+                    Exporter en VTT
+                  </button>
+                  <button
+                    className="secondary"
+                    onClick={() => handleExport("docx")}
+                  >
+                    Exporter en DOCX
+                  </button>
+                  <button
+                    className="secondary"
+                    onClick={() => handleExport("pdf")}
+                  >
+                    Exporter en PDF
+                  </button>
+                  <button
+                    className="secondary"
+                    disabled={!docAvailable}
+                    onClick={handleExportDoc}
+                  >
+                    Exporter en DOC
+                  </button>
                 </div>
+                {!docAvailable && (
+                  <p className="muted">
+                    Export DOC indisponible : LibreOffice n’est pas installé sur
+                    cet appareil.
+                  </p>
+                )}
               </section>
             </>
           )}

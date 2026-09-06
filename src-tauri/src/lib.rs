@@ -1,4 +1,5 @@
 mod audio;
+mod cleanup;
 mod db;
 mod error;
 mod export;
@@ -8,6 +9,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use error::AppError;
+use serde::Serialize;
 use tauri::Manager;
 use transcription::Transcriber;
 
@@ -138,22 +140,129 @@ fn transcribe_local(
     db::get_detail(&conn, interview_id)
 }
 
+#[derive(Serialize)]
+struct CleanupApplied {
+    segment: db::models::Segment,
+    outcome: cleanup::CleanupOutcome,
+}
+
+#[tauri::command]
+fn apply_segment_cleanup(
+    db: tauri::State<DbState>,
+    segment_id: i64,
+) -> Result<CleanupApplied, AppError> {
+    let conn = lock_db(&db)?;
+    let segment = db::segments::get(&conn, segment_id)?;
+    let current = db::edits::current_text(&conn, segment_id, &segment.raw_text)?;
+    let outcome = cleanup::analyze(&current);
+    if outcome.cleaned_text == current {
+        return Ok(CleanupApplied { segment, outcome });
+    }
+    db::edits::record(
+        &conn,
+        segment_id,
+        "cleanup",
+        &current,
+        &outcome.cleaned_text,
+    )?;
+    let segment = db::segments::get(&conn, segment_id)?;
+    Ok(CleanupApplied { segment, outcome })
+}
+
+#[tauri::command]
+fn save_segment_edit(
+    db: tauri::State<DbState>,
+    segment_id: i64,
+    text: String,
+) -> Result<db::models::Segment, AppError> {
+    if text.trim().is_empty() {
+        return Err(AppError::Edit("le texte ne peut pas etre vide".into()));
+    }
+    let conn = lock_db(&db)?;
+    let segment = db::segments::get(&conn, segment_id)?;
+    let current = db::edits::current_text(&conn, segment_id, &segment.raw_text)?;
+    if text != current {
+        db::edits::record(&conn, segment_id, "manual", &current, &text)?;
+    }
+    db::segments::get(&conn, segment_id)
+}
+
+#[tauri::command]
+fn undo_segment_edit(
+    db: tauri::State<DbState>,
+    segment_id: i64,
+) -> Result<db::models::Segment, AppError> {
+    let conn = lock_db(&db)?;
+    let reverted = db::edits::revert_latest(&conn, segment_id)?;
+    if reverted.is_none() {
+        return Err(AppError::NotFound(
+            "aucune modification a annuler pour ce segment".into(),
+        ));
+    }
+    db::segments::get(&conn, segment_id)
+}
+
+#[tauri::command]
+fn list_segment_edits(
+    db: tauri::State<DbState>,
+    segment_id: i64,
+) -> Result<Vec<db::models::Edit>, AppError> {
+    let conn = lock_db(&db)?;
+    db::edits::list_for_segment(&conn, segment_id)
+}
+
 #[tauri::command]
 fn export_interview(
     db: tauri::State<DbState>,
     interview_id: i64,
     format: String,
     show_timestamps: bool,
+    use_cleaned_text: bool,
     destination_path: String,
 ) -> Result<(), AppError> {
     let detail = {
         let conn = lock_db(&db)?;
         db::get_detail(&conn, interview_id)?
     };
-    let options = export::ExportOptions { show_timestamps };
+    let options = export::ExportOptions {
+        show_timestamps,
+        use_cleaned_text,
+    };
     let rendered = export::render(&format, &detail, &options)?;
     std::fs::write(destination_path, rendered)?;
     Ok(())
+}
+
+#[tauri::command]
+fn check_doc_export_available() -> bool {
+    export::doc::is_available()
+}
+
+#[tauri::command]
+async fn export_interview_doc(
+    app: tauri::AppHandle,
+    interview_id: i64,
+    show_timestamps: bool,
+    use_cleaned_text: bool,
+    destination_path: String,
+) -> Result<(), AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let db = app.state::<DbState>();
+        let detail = {
+            let conn = lock_db(&db)?;
+            db::get_detail(&conn, interview_id)?
+        };
+        let options = export::ExportOptions {
+            show_timestamps,
+            use_cleaned_text,
+        };
+        let work_dir = app_data_subdir(&app, "export-tmp")?;
+        let rendered = export::doc::render(&detail, &options, &work_dir)?;
+        std::fs::write(destination_path, rendered)?;
+        Ok(())
+    })
+    .await
+    .map_err(|err| AppError::Export(format!("export DOC interrompu: {err}")))?
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -177,7 +286,13 @@ pub fn run() {
             get_interview,
             ensure_whisper_model,
             transcribe_interview,
-            export_interview
+            apply_segment_cleanup,
+            save_segment_edit,
+            undo_segment_edit,
+            list_segment_edits,
+            export_interview,
+            export_interview_doc,
+            check_doc_export_available
         ])
         .run(tauri::generate_context!())
         .expect("failed to run InterviewScribe");

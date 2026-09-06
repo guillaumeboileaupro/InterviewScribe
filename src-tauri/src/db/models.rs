@@ -30,8 +30,22 @@ pub struct Segment {
     pub start_ms: i64,
     pub end_ms: i64,
     pub raw_text: String,
+    /// Derived, never persisted on the row: the latest non-reverted edit's
+    /// text, or `raw_text` if the segment has never been edited.
+    pub current_text: String,
     pub confidence: Option<f64>,
     pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Edit {
+    pub id: i64,
+    pub segment_id: i64,
+    pub operation: String,
+    pub before_text: String,
+    pub after_text: String,
+    pub created_at: String,
+    pub reverted_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

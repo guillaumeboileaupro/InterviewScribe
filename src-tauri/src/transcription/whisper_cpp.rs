@@ -122,4 +122,79 @@ mod tests {
             "expected the well-known JFK sample to mention 'country', got: {full_text}"
         );
     }
+
+    /// Manual QA tool for docs/ROADMAP.md's "tester plusieurs accents francais et
+    /// niveaux de bruit" checklist item. No content assertion: inputs vary (accent,
+    /// noise, language), so the point is printing the transcript for human review,
+    /// not automated pass/fail. Never runs in CI; never commits a model or a real
+    /// recording (AGENTS.md).
+    ///
+    /// Optionally mixes in synthetic white noise at a target SNR (dB) to test noise
+    /// robustness reproducibly, instead of hunting for real noisy recordings with
+    /// unknown ground truth.
+    ///
+    /// Run with:
+    ///   INTERVIEWSCRIBE_TEST_MODEL=/path/to/model.bin \
+    ///   INTERVIEWSCRIBE_TEST_WAV=/path/to/sample.mp3 \
+    ///   INTERVIEWSCRIBE_TEST_LANG=fr \
+    ///   [INTERVIEWSCRIBE_TEST_NOISE_DB=10] \
+    ///   cargo test --manifest-path src-tauri/Cargo.toml --release -- --ignored --nocapture whisper_qa_sample
+    #[test]
+    #[ignore]
+    fn whisper_qa_sample() {
+        let model_path = std::env::var("INTERVIEWSCRIBE_TEST_MODEL")
+            .expect("set INTERVIEWSCRIBE_TEST_MODEL to a local ggml model path");
+        let wav_path = std::env::var("INTERVIEWSCRIBE_TEST_WAV")
+            .expect("set INTERVIEWSCRIBE_TEST_WAV to a local audio path");
+        let language = std::env::var("INTERVIEWSCRIBE_TEST_LANG").ok();
+        let noise_db: Option<f32> = std::env::var("INTERVIEWSCRIBE_TEST_NOISE_DB")
+            .ok()
+            .and_then(|value| value.parse().ok());
+
+        let mut pcm = crate::audio::decode::decode_to_mono_pcm16k(std::path::Path::new(&wav_path))
+            .expect("failed to decode test audio");
+        if let Some(snr_db) = noise_db {
+            pcm = add_white_noise(&pcm, snr_db, 42);
+            println!("-- mixed in white noise at {snr_db} dB SNR --");
+        }
+
+        let transcriber = WhisperCppTranscriber::load(std::path::Path::new(&model_path))
+            .expect("failed to load model");
+        let segments = transcriber
+            .transcribe(&pcm, language.as_deref())
+            .expect("failed to transcribe");
+
+        println!(
+            "-- {} segment(s), language hint: {:?} --",
+            segments.len(),
+            language
+        );
+        for segment in &segments {
+            println!(
+                "[{} - {}] (confidence {:?}) {}",
+                segment.start_ms, segment.end_ms, segment.confidence, segment.text
+            );
+        }
+    }
+
+    /// Deterministic PRNG-based white noise, scaled to hit a target SNR against the
+    /// given signal. No external `rand` dependency needed for a test-only helper.
+    #[cfg(test)]
+    fn add_white_noise(pcm: &[f32], snr_db: f32, seed: u64) -> Vec<f32> {
+        let signal_power = pcm.iter().map(|s| s * s).sum::<f32>() / pcm.len().max(1) as f32;
+        let noise_power = signal_power / 10f32.powf(snr_db / 10.0);
+        let noise_amplitude = noise_power.sqrt();
+
+        let mut state = seed.max(1);
+        pcm.iter()
+            .map(|sample| {
+                state = state
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1);
+                let uniform = ((state >> 40) as f32) / (1u64 << 24) as f32; // [0, 1)
+                let noise = (uniform * 2.0 - 1.0) * noise_amplitude;
+                sample + noise
+            })
+            .collect()
+    }
 }

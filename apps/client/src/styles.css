@@ -421,6 +421,10 @@ time {
   font-size: 15px;
   line-height: 1.9;
 }
+.removedSpan {
+  color: var(--muted);
+  text-decoration: line-through;
+}
 .settingsPanel {
   padding: 28px;
   margin-bottom: 24px;

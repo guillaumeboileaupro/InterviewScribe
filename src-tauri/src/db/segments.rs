@@ -37,17 +37,37 @@ pub fn insert_batch(
     Ok(())
 }
 
+const SELECT_SEGMENT_COLUMNS: &str = "
+    s.id, s.interview_id, s.speaker_id, s.start_ms, s.end_ms, s.raw_text,
+    COALESCE(
+        (SELECT after_text FROM edit WHERE segment_id = s.id AND reverted_at IS NULL ORDER BY id DESC LIMIT 1),
+        s.raw_text
+    ),
+    s.confidence, s.status
+";
+
 pub fn list_for_interview(conn: &Connection, interview_id: i64) -> Result<Vec<Segment>, AppError> {
-    let mut stmt = conn.prepare(
-        "SELECT id, interview_id, speaker_id, start_ms, end_ms, raw_text, confidence, status
-         FROM segment WHERE interview_id = ?1 ORDER BY start_ms ASC",
-    )?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT {SELECT_SEGMENT_COLUMNS} FROM segment s WHERE s.interview_id = ?1 ORDER BY s.start_ms ASC"
+    ))?;
     let rows = stmt.query_map(params![interview_id], row_to_segment)?;
     let mut out = Vec::new();
     for row in rows {
         out.push(row?);
     }
     Ok(out)
+}
+
+pub fn get(conn: &Connection, segment_id: i64) -> Result<Segment, AppError> {
+    conn.query_row(
+        &format!("SELECT {SELECT_SEGMENT_COLUMNS} FROM segment s WHERE s.id = ?1"),
+        params![segment_id],
+        row_to_segment,
+    )
+    .map_err(|err| match err {
+        rusqlite::Error::QueryReturnedNoRows => AppError::NotFound(format!("segment {segment_id}")),
+        other => AppError::Db(other),
+    })
 }
 
 fn row_to_segment(row: &Row) -> rusqlite::Result<Segment> {
@@ -58,8 +78,9 @@ fn row_to_segment(row: &Row) -> rusqlite::Result<Segment> {
         start_ms: row.get(3)?,
         end_ms: row.get(4)?,
         raw_text: row.get(5)?,
-        confidence: row.get(6)?,
-        status: row.get(7)?,
+        current_text: row.get(6)?,
+        confidence: row.get(7)?,
+        status: row.get(8)?,
     })
 }
 
@@ -125,6 +146,34 @@ mod tests {
             .unwrap();
         let remaining = list_for_interview(&conn, interview_id).unwrap();
         assert!(remaining.is_empty());
+    }
+
+    #[test]
+    fn current_text_defaults_to_raw_text_with_no_edits() {
+        let (conn, interview_id, speaker_id) = setup();
+        insert_batch(
+            &conn,
+            interview_id,
+            &[NewSegment {
+                speaker_id: Some(speaker_id),
+                start_ms: 0,
+                end_ms: 1000,
+                raw_text: "Bonjour euh le monde".into(),
+                confidence: None,
+            }],
+        )
+        .unwrap();
+        let segment = list_for_interview(&conn, interview_id).unwrap().remove(0);
+        assert_eq!(segment.current_text, segment.raw_text);
+        let fetched = get(&conn, segment.id).unwrap();
+        assert_eq!(fetched.raw_text, "Bonjour euh le monde");
+    }
+
+    #[test]
+    fn get_missing_segment_is_not_found() {
+        let (conn, _interview_id, _speaker_id) = setup();
+        let err = get(&conn, 999).unwrap_err();
+        assert!(matches!(err, AppError::NotFound(_)));
     }
 
     #[test]

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
 
@@ -148,6 +148,7 @@ describe("App", () => {
                 start_ms: 0,
                 end_ms: 1000,
                 raw_text: "Bonjour et merci d’être venu.",
+                current_text: "Bonjour et merci d’être venu.",
                 confidence: 0.9,
                 status: "raw",
               },
@@ -176,6 +177,286 @@ describe("App", () => {
     expect(
       screen.getByRole("heading", { level: 1, name: "entretien.wav" }),
     ).toBeInTheDocument();
+  });
+
+  it("cleans a segment and shows the removed hesitation struck through", async () => {
+    mockIPC((cmd) => {
+      switch (cmd) {
+        case "list_interviews":
+          return [];
+        case "ensure_whisper_model":
+          return { state: "Ready", path: "/models/model.bin" };
+        case "plugin:dialog|open":
+          return "/home/user/entretien.wav";
+        case "import_interview":
+          return {
+            id: 7,
+            title: "entretien.wav",
+            language: null,
+            mode: "posteriori",
+            audio_path: "/audio/7.wav",
+            status: "imported",
+            error_message: null,
+            created_at: "0",
+            updated_at: "0",
+          };
+        case "transcribe_interview":
+          return {
+            interview: {
+              id: 7,
+              title: "entretien.wav",
+              language: null,
+              mode: "posteriori",
+              audio_path: "/audio/7.wav",
+              status: "transcribed",
+              error_message: null,
+              created_at: "0",
+              updated_at: "0",
+            },
+            speakers: [
+              {
+                id: 1,
+                interview_id: 7,
+                label: "Intervenant 1",
+                color: "#3156a3",
+                display_name: null,
+              },
+            ],
+            segments: [
+              {
+                id: 1,
+                interview_id: 7,
+                speaker_id: 1,
+                start_ms: 0,
+                end_ms: 1000,
+                raw_text: "Alors, euh, je pense.",
+                current_text: "Alors, euh, je pense.",
+                confidence: 0.9,
+                status: "raw",
+              },
+            ],
+          };
+        case "apply_segment_cleanup":
+          return {
+            segment: {
+              id: 1,
+              interview_id: 7,
+              speaker_id: 1,
+              start_ms: 0,
+              end_ms: 1000,
+              raw_text: "Alors, euh, je pense.",
+              current_text: "Alors, je pense.",
+              confidence: 0.9,
+              status: "raw",
+            },
+            outcome: {
+              cleaned_text: "Alors, je pense.",
+              parts: [
+                { kept: true, text: "Alors", reason: null },
+                { kept: true, text: ", ", reason: null },
+                { kept: false, text: "euh", reason: "hesitation" },
+                { kept: true, text: "je", reason: null },
+                { kept: true, text: " ", reason: null },
+                { kept: true, text: "pense", reason: null },
+                { kept: true, text: ".", reason: null },
+              ],
+            },
+          };
+        default:
+          throw new Error(`unexpected command: ${cmd}`);
+      }
+    });
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /Nouvel entretien/ }));
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "Mode de capture" }),
+      { target: { value: "file" } },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Choisir un fichier audio" }),
+    );
+    await screen.findByText("Alors, euh, je pense.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Nettoyer" }));
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Version nettoyée" }),
+    );
+
+    expect(await screen.findByText("euh")).toHaveClass("removedSpan");
+    expect(screen.getByRole("button", { name: "Annuler" })).toBeEnabled();
+  });
+
+  it("undoes the last edit on a segment", async () => {
+    mockIPC((cmd) => {
+      switch (cmd) {
+        case "list_interviews":
+          return [
+            {
+              id: 7,
+              title: "entretien.wav",
+              language: null,
+              mode: "posteriori",
+              audio_path: "/audio/7.wav",
+              status: "transcribed",
+              error_message: null,
+              created_at: "0",
+              updated_at: "0",
+            },
+          ];
+        case "get_interview":
+          return {
+            interview: {
+              id: 7,
+              title: "entretien.wav",
+              language: null,
+              mode: "posteriori",
+              audio_path: "/audio/7.wav",
+              status: "transcribed",
+              error_message: null,
+              created_at: "0",
+              updated_at: "0",
+            },
+            speakers: [],
+            segments: [
+              {
+                id: 1,
+                interview_id: 7,
+                speaker_id: null,
+                start_ms: 0,
+                end_ms: 1000,
+                raw_text: "Alors, euh, je pense.",
+                current_text: "Alors, euh, je pense.",
+                confidence: 0.9,
+                status: "raw",
+              },
+            ],
+          };
+        case "apply_segment_cleanup":
+          return {
+            segment: {
+              id: 1,
+              interview_id: 7,
+              speaker_id: null,
+              start_ms: 0,
+              end_ms: 1000,
+              raw_text: "Alors, euh, je pense.",
+              current_text: "Alors, je pense.",
+              confidence: 0.9,
+              status: "raw",
+            },
+            outcome: { cleaned_text: "Alors, je pense.", parts: [] },
+          };
+        case "undo_segment_edit":
+          return {
+            id: 1,
+            interview_id: 7,
+            speaker_id: null,
+            start_ms: 0,
+            end_ms: 1000,
+            raw_text: "Alors, euh, je pense.",
+            current_text: "Alors, euh, je pense.",
+            confidence: 0.9,
+            status: "raw",
+          };
+        default:
+          throw new Error(`unexpected command: ${cmd}`);
+      }
+    });
+
+    render(<App />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /entretien.wav/ }),
+    );
+    const cleanupButton = await screen.findByRole("button", {
+      name: "Nettoyer",
+    });
+    fireEvent.click(cleanupButton);
+
+    const undoButton = await screen.findByRole("button", { name: "Annuler" });
+    expect(undoButton).toBeEnabled();
+
+    fireEvent.click(undoButton);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Annuler" })).toBeDisabled(),
+    );
+  });
+
+  it("saves a manual edit to a segment", async () => {
+    mockIPC((cmd) => {
+      switch (cmd) {
+        case "list_interviews":
+          return [
+            {
+              id: 7,
+              title: "entretien.wav",
+              language: null,
+              mode: "posteriori",
+              audio_path: "/audio/7.wav",
+              status: "transcribed",
+              error_message: null,
+              created_at: "0",
+              updated_at: "0",
+            },
+          ];
+        case "get_interview":
+          return {
+            interview: {
+              id: 7,
+              title: "entretien.wav",
+              language: null,
+              mode: "posteriori",
+              audio_path: "/audio/7.wav",
+              status: "transcribed",
+              error_message: null,
+              created_at: "0",
+              updated_at: "0",
+            },
+            speakers: [],
+            segments: [
+              {
+                id: 1,
+                interview_id: 7,
+                speaker_id: null,
+                start_ms: 0,
+                end_ms: 1000,
+                raw_text: "Bonjour.",
+                current_text: "Bonjour.",
+                confidence: 0.9,
+                status: "raw",
+              },
+            ],
+          };
+        case "save_segment_edit":
+          return {
+            id: 1,
+            interview_id: 7,
+            speaker_id: null,
+            start_ms: 0,
+            end_ms: 1000,
+            raw_text: "Bonjour.",
+            current_text: "Salut !",
+            confidence: 0.9,
+            status: "raw",
+          };
+        default:
+          throw new Error(`unexpected command: ${cmd}`);
+      }
+    });
+
+    render(<App />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /entretien.wav/ }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Modifier" }));
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "Salut !" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Version nettoyée" }),
+    );
+    expect(await screen.findByText("Salut !")).toBeInTheDocument();
   });
 });
 
@@ -232,5 +513,57 @@ describe("model prerequisites", () => {
     expect(
       screen.getByRole("button", { name: "Choisir un fichier audio" }),
     ).toBeEnabled();
+  });
+
+  it("disables the DOC export button when LibreOffice is unavailable", async () => {
+    mockIPC((cmd) => {
+      switch (cmd) {
+        case "list_interviews":
+          return [
+            {
+              id: 7,
+              title: "entretien.wav",
+              language: null,
+              mode: "posteriori",
+              audio_path: "/audio/7.wav",
+              status: "transcribed",
+              error_message: null,
+              created_at: "0",
+              updated_at: "0",
+            },
+          ];
+        case "get_interview":
+          return {
+            interview: {
+              id: 7,
+              title: "entretien.wav",
+              language: null,
+              mode: "posteriori",
+              audio_path: "/audio/7.wav",
+              status: "transcribed",
+              error_message: null,
+              created_at: "0",
+              updated_at: "0",
+            },
+            speakers: [],
+            segments: [],
+          };
+        case "check_doc_export_available":
+          return false;
+        default:
+          throw new Error(`unexpected command: ${cmd}`);
+      }
+    });
+
+    render(<App />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /entretien.wav/ }),
+    );
+    expect(
+      await screen.findByRole("button", { name: "Exporter en DOC" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByText(/LibreOffice n’est pas installé/),
+    ).toBeInTheDocument();
   });
 });

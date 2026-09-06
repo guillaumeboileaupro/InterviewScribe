@@ -1,4 +1,4 @@
-use super::{format_timestamp, speaker_label, ExportOptions};
+use super::{format_timestamp, segment_text, speaker_label, ExportOptions};
 use crate::db::models::InterviewDetail;
 
 pub fn render(detail: &InterviewDetail, options: &ExportOptions) -> String {
@@ -7,15 +7,16 @@ pub fn render(detail: &InterviewDetail, options: &ExportOptions) -> String {
     out.push_str("\n\n");
     for segment in &detail.segments {
         let label = speaker_label(detail, segment.speaker_id);
+        let text = segment_text(segment, options);
         if options.show_timestamps {
             out.push_str(&format!(
                 "[{}] {}: {}\n",
                 format_timestamp(segment.start_ms),
                 label,
-                segment.raw_text
+                text
             ));
         } else {
-            out.push_str(&format!("{}: {}\n", label, segment.raw_text));
+            out.push_str(&format!("{label}: {text}\n"));
         }
     }
     out
@@ -46,7 +47,8 @@ mod tests {
                 speaker_id: None,
                 start_ms: 65_000,
                 end_ms: 66_000,
-                raw_text: "Bonjour".into(),
+                raw_text: "Bonjour euh".into(),
+                current_text: "Bonjour".into(),
                 confidence: Some(0.9),
                 status: "raw".into(),
             }],
@@ -59,10 +61,11 @@ mod tests {
             &sample_detail(),
             &ExportOptions {
                 show_timestamps: true,
+                use_cleaned_text: false,
             },
         );
         assert!(out.contains("[01:05]"));
-        assert!(out.contains("Bonjour"));
+        assert!(out.contains("Bonjour euh"));
     }
 
     #[test]
@@ -71,9 +74,23 @@ mod tests {
             &sample_detail(),
             &ExportOptions {
                 show_timestamps: false,
+                use_cleaned_text: false,
             },
         );
         assert!(!out.contains("01:05"));
+        assert!(out.contains("Bonjour euh"));
+    }
+
+    #[test]
+    fn uses_cleaned_text_when_requested() {
+        let out = render(
+            &sample_detail(),
+            &ExportOptions {
+                show_timestamps: false,
+                use_cleaned_text: true,
+            },
+        );
         assert!(out.contains("Bonjour"));
+        assert!(!out.contains("Bonjour euh"));
     }
 }

@@ -1,22 +1,21 @@
-use super::{format_timestamp, segment_text, speaker_label, ExportOptions};
+use super::{format_full_timestamp, segment_text, speaker_label, ExportOptions};
 use crate::db::models::InterviewDetail;
 
+/// SRT always includes timestamps: the format is structurally pointless
+/// without them (same rationale as JSON).
 pub fn render(detail: &InterviewDetail, options: &ExportOptions) -> String {
     let mut out = String::new();
-    out.push_str(&format!("# {}\n\n", detail.interview.title));
-    for segment in &detail.segments {
+    for (index, segment) in detail.segments.iter().enumerate() {
         let label = speaker_label(detail, segment.speaker_id);
         let text = segment_text(segment, options);
-        if options.show_timestamps {
-            out.push_str(&format!(
-                "**{}** _{}_\n\n{}\n\n",
-                label,
-                format_timestamp(segment.start_ms),
-                text
-            ));
-        } else {
-            out.push_str(&format!("**{label}**\n\n{text}\n\n"));
-        }
+        out.push_str(&format!(
+            "{}\n{} --> {}\n{}: {}\n\n",
+            index + 1,
+            format_full_timestamp(segment.start_ms, ','),
+            format_full_timestamp(segment.end_ms, ','),
+            label,
+            text
+        ));
     }
     out
 }
@@ -44,8 +43,8 @@ mod tests {
                 id: 1,
                 interview_id: 1,
                 speaker_id: None,
-                start_ms: 5_000,
-                end_ms: 6_000,
+                start_ms: 3_661_500,
+                end_ms: 3_662_750,
                 raw_text: "Bonjour".into(),
                 current_text: "Bonjour".into(),
                 confidence: None,
@@ -55,15 +54,15 @@ mod tests {
     }
 
     #[test]
-    fn renders_title_as_heading() {
+    fn always_includes_timestamps_regardless_of_option() {
         let out = render(
             &sample_detail(),
             &ExportOptions {
-                show_timestamps: true,
+                show_timestamps: false,
                 use_cleaned_text: false,
             },
         );
-        assert!(out.starts_with("# Entretien test\n"));
-        assert!(out.contains("00:05"));
+        assert!(out.contains("01:01:01,500 --> 01:01:02,750"));
+        assert!(out.starts_with("1\n"));
     }
 }

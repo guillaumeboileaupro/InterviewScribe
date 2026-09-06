@@ -1,3 +1,4 @@
+pub mod edits;
 pub mod interviews;
 pub mod models;
 pub mod schema;

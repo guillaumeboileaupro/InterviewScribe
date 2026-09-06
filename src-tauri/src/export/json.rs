@@ -10,6 +10,7 @@ struct JsonSegment<'a> {
     end_ms: i64,
     speaker: String,
     text: &'a str,
+    cleaned_text: &'a str,
     confidence: Option<f64>,
 }
 
@@ -32,6 +33,7 @@ pub fn render(detail: &InterviewDetail) -> Result<String, AppError> {
             end_ms: segment.end_ms,
             speaker: speaker_label(detail, segment.speaker_id),
             text: &segment.raw_text,
+            cleaned_text: &segment.current_text,
             confidence: segment.confidence,
         })
         .collect();
@@ -72,6 +74,7 @@ mod tests {
                 start_ms: 1_000,
                 end_ms: 2_000,
                 raw_text: "Bonjour".into(),
+                current_text: "Bonjour".into(),
                 confidence: Some(0.8),
                 status: "raw".into(),
             }],
