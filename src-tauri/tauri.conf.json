@@ -26,7 +26,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "icon": [],
+    "icon": ["icons/icon.png"],
     "shortDescription": "Transcription locale d'entretiens",
     "longDescription": "Transcription locale en temps reel ou a posteriori avec separation des intervenants."
   }
