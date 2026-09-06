@@ -6,12 +6,12 @@
 - [x] Choisir Tauri 2, React, TypeScript et Rust.
 - [x] Ajouter les contextes Claude/Codex et les skills du projet.
 - [x] Definir la strategie de livraison Windows, Linux et Android.
-- [ ] Initialiser une application Tauri 2 executable sur bureau et Android.
-- [ ] Mettre en place lint, formatage, tests et integration continue.
+- [x] Initialiser une application Tauri 2 executable sur bureau et Android.
+- [x] Mettre en place lint, formatage, tests et integration continue.
 
 ## Phase 1 - Prototype a posteriori
 
-- [ ] Importer WAV et MP3.
+- [ ] Importer tout format audio courant (WAV, MP3, M4A, FLAC, OGG, AAC, etc.).
 - [ ] Integrer un modele Whisper local.
 - [ ] Afficher les segments et horodatages.
 - [ ] Sauvegarder un projet dans SQLite.
@@ -26,7 +26,8 @@ Critere de sortie: un entretien mono-locuteur peut etre importe, transcrit, corr
 - [ ] Conserver le texte brut immuable.
 - [ ] Implementer les suppressions reversibles d'hesitations.
 - [ ] Visualiser et annuler chaque modification.
-- [ ] Ajouter SRT et VTT.
+- [ ] Ajouter SRT, VTT, DOCX et PDF.
+- [ ] Ajouter DOC via conversion locale optionnelle (sans bloquer les autres formats si l'outil est absent).
 
 Critere de sortie: aucune modification automatique ne peut detruire le texte source ou changer silencieusement le sens.
 

@@ -10,3 +10,13 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("failed to run InterviewScribe");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn application_status_reports_foundation() {
+        assert_eq!(application_status(), "foundation");
+    }
+}

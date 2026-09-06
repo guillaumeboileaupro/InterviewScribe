@@ -13,14 +13,14 @@ Elle transforme une conversation en texte en temps reel ou depuis un enregistrem
 - Detecter automatiquement le nombre d'intervenants.
 - Associer chaque prise de parole a un intervenant modifiable.
 - Activer ou masquer les horodatages.
-- Enregistrer une conversation ou importer un fichier audio/video.
-- Exporter en TXT, Markdown, JSON, SRT et VTT.
+- Enregistrer une conversation ou importer un fichier audio/video dans tout format courant.
+- Exporter en TXT, Markdown, JSON, SRT, VTT, DOCX, DOC et PDF, au choix de l'utilisateur.
 - Fonctionner localement par defaut afin de proteger les entretiens.
 - Livrer une application Windows, un installateur Windows, un paquet Linux et une application Android.
 
 ## Etat du projet
 
-Le depot contient actuellement le cadrage fonctionnel, l'architecture cible, les consignes Claude/Codex, les skills du projet et le squelette de l'interface. L'integration du moteur audio et de Whisper constitue la premiere phase de developpement.
+Le depot contient actuellement le cadrage fonctionnel, l'architecture cible et le squelette de l'interface. L'integration du moteur audio et de Whisper constitue la premiere phase de developpement.
 
 Consultez:
 

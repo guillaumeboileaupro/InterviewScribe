@@ -28,7 +28,7 @@ La retranscription manuelle d'un entretien est lente. Les solutions existantes e
 
 - Selection du microphone et indicateur de niveau sonore.
 - Pause, reprise et arret sans perte des donnees.
-- Import WAV, MP3, M4A, FLAC, OGG et formats video courants via extraction audio.
+- Import de tout format audio courant (WAV, MP3, M4A, FLAC, OGG, AAC, WMA, etc.) et des formats video courants via extraction audio.
 - Sauvegarde incrementale pendant l'enregistrement.
 
 ### Transcription
@@ -57,7 +57,9 @@ La retranscription manuelle d'un entretien est lente. Les solutions existantes e
 - TXT et Markdown pour la lecture.
 - JSON pour conserver la structure complete.
 - SRT et VTT pour les sous-titres.
-- Choix d'inclure les horodatages et les noms des intervenants.
+- DOCX et PDF pour un document pret a partager ou imprimer.
+- DOC (format Word historique) via une conversion locale optionnelle, sans jamais bloquer les autres formats si l'outil de conversion est absent.
+- Choix du format d'export et possibilite d'inclure les horodatages et les noms des intervenants.
 
 ## Exigences non fonctionnelles
 

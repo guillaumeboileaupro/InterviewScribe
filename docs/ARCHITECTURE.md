@@ -16,7 +16,7 @@ Tauri 2 permet de partager l'interface et une partie du coeur Rust entre le bure
 | Diarisation | estimation du nombre de locuteurs et attribution des segments |
 | Nettoyage | annotations reversibles des hesitations et repetitions |
 | Persistance | SQLite pour les metadonnees et fichiers pour l'audio |
-| Export | TXT, Markdown, JSON, SRT et VTT |
+| Export | TXT, Markdown, JSON, SRT, VTT, DOCX, PDF et DOC (via conversion locale) |
 
 ## Pipeline temps reel
 
@@ -33,7 +33,7 @@ Le temps reel est une transcription incrementale avec une faible latence, pas un
 
 ## Pipeline a posteriori
 
-1. Decodage et normalisation en PCM mono.
+1. Decodage et normalisation en PCM mono, via un decodeur couvrant tout format audio et video courant.
 2. Detection des zones de parole.
 3. Transcription complete.
 4. Alignement temporel.
@@ -61,6 +61,13 @@ Le temps reel est une transcription incrementale avec une faible latence, pas un
 ## Diarisation
 
 Whisper ne distingue pas a lui seul les personnes. La diarisation doit exposer une interface stable et plusieurs implementations possibles. Le premier prototype peut exploiter des embeddings vocaux locaux. Les recouvrements de voix doivent etre signales comme incertains plutot que forces vers un seul locuteur.
+
+## Export
+
+- TXT, Markdown, JSON, SRT, VTT, DOCX et PDF sont generes nativement, sans dependance externe.
+- DOC (format Word binaire historique) n'a pas de bibliotheque Rust fiable pour l'ecrire directement: il est produit en generant d'abord le DOCX puis en le convertissant localement (par exemple via LibreOffice en ligne de commande) si un convertisseur est installe.
+- L'absence du convertisseur ne doit jamais bloquer les autres formats: seul l'export DOC est indisponible, avec un message clair a l'utilisateur.
+- Le format d'export est un choix explicite de l'utilisateur, independant du format de capture ou d'import.
 
 ## Securite et confidentialite
 
