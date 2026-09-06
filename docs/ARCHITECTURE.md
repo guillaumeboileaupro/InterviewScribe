@@ -57,6 +57,7 @@ Le temps reel est une transcription incrementale avec une faible latence, pas un
 - Verifier l'integrite du modele.
 - Fournir un profil rapide et un profil precis selon les ressources.
 - Sur Android, privilegier les modeles quantifies et mesurer memoire, batterie et temperature.
+- Inference via `whisper-rs` (bindings whisper.cpp/GGML). Sa compilation croisee Android necessite `cmake` et `clang` installes, ainsi que la variable `CMAKE_TOOLCHAIN_FILE` pointant vers `android.toolchain.cmake` du NDK (sinon CMake echoue avec "Neither the NDK or a standalone toolchain was found"). Utiliser `scripts/tauri-android.sh` (au lieu de `pnpm tauri android ...` directement) qui detecte le NDK installe et charge `scripts/android-toolchain.cmake`, en local comme en CI. Ce fichier mappe la cible Cargo vers l’ABI Android (ARM64, ARMv7, x86 ou x86_64) avant de charger la toolchain NDK; sans ce mapping, le NDK peut compiler en ARMv7 meme pour une cible Rust ARM64.
 
 ## Diarisation
 
@@ -77,3 +78,59 @@ Whisper ne distingue pas a lui seul les personnes. La diarisation doit exposer u
 - Aucun trafic reseau pendant une transcription locale, hors telechargement explicite d'un modele.
 - Suppression coordonnee de la base, de l'audio, des caches et des exports geres.
 
+
+## Modele fourni avec l’application
+
+Le modele par defaut est **Whisper Large v3 Turbo multilingue quantifie Q5_0**
+(574 041 195 octets, environ 575 Mo). Il remplace Small. Sa revision distante,
+sa taille et son empreinte SHA-256 sont epinglees dans
+`src-tauri/resources/models/manifest.json`. La licence MIT de Whisper est livree
+avec le modele.
+
+Les paquets Windows, Linux et Android incluent le modele dans les ressources
+Tauri. L’application ne telecharge aucun modele : le producteur du paquet lance
+`pnpm models:prepare` avant la construction. Le hook `beforeBuildCommand`
+verifie la taille et le SHA-256 et refuse de fabriquer un paquet incomplet.
+Les poids et les fichiers temporaires restent ignores par Git.
+
+Sur bureau, Whisper lit directement la ressource installee. Sur Android, le
+plugin filesystem ouvre la ressource APK et le code Rust la copie par flux dans
+le stockage prive, verifie son empreinte puis effectue un renommage atomique.
+La copie valide est reutilisee; une copie corrompue est reparee depuis l’APK.
+Prevoir de la place pour l’APK, la copie extraite et le cache temporaire du
+plugin filesystem lorsque la ressource APK est compressee. Aucune connexion ni action
+de telechargement n’est necessaire au premier usage. La copie, la verification
+et l’inference se font hors du fil de l’interface.
+
+Whisper seul ne fournit pas de diarisation : cette version attribue les segments
+a `Intervenant 1`. Les performances et la memoire sur telephone restent a
+mesurer sur appareil cible; la presence du modele ne valide pas le support Android.
+
+Verification locale facultative avec l’echantillon public `jfk.wav` de
+whisper.cpp (ne pas ajouter l’audio ni les poids au depot) :
+
+```bash
+pnpm models:prepare
+INTERVIEWSCRIBE_TEST_MODEL="$PWD/src-tauri/resources/models/ggml-large-v3-turbo-q5_0.bin" \
+INTERVIEWSCRIBE_TEST_WAV=/chemin/jfk.wav \
+cargo test --manifest-path src-tauri/Cargo.toml --lib whisper_smoke -- --ignored
+```
+
+En developpement, preparer le modele puis lancer `pnpm tauri dev`. Le serveur
+Vite seul ne fournit pas les commandes natives. En debug, si les ressources ne
+sont pas encore copiees par Tauri, le moteur cherche le modele dans le dossier
+source `src-tauri/resources/models`. Ce repli est absent des versions release.
+
+Sources : [modeles whisper.cpp](https://github.com/ggml-org/whisper.cpp/blob/master/models/README.md),
+[ressources Tauri](https://v2.tauri.app/develop/resources/).
+
+### Validation du modele integre (6 septembre 2026)
+
+- Test de parole public JFK reussi avec Large v3 Turbo Q5_0 sur CPU Linux.
+- 30 tests Rust, 8 tests d’interface et 3 cas de verification de packaging reussis.
+- Paquet Debian debug construit; modele et licence presents, SHA-256 du contenu verifie.
+- Binaire du paquet Linux demarre sous Xvfb avec un profil temporaire (arret apres 12 secondes sans erreur).
+- APK debug construit pour ARM64; modele et licence presents, SHA-256 du contenu verifie.
+- Installation neuve, extraction et inference sur appareil Android, ainsi que validation Windows, restent a effectuer.
+
+Ces artefacts debug sont des paquets de validation, pas une publication signee.

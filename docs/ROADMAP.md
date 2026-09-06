@@ -11,14 +11,16 @@
 
 ## Phase 1 - Prototype a posteriori
 
-- [ ] Importer tout format audio courant (WAV, MP3, M4A, FLAC, OGG, AAC, etc.).
-- [ ] Integrer un modele Whisper local.
-- [ ] Afficher les segments et horodatages.
-- [ ] Sauvegarder un projet dans SQLite.
-- [ ] Exporter en TXT, Markdown et JSON.
+- [x] Importer tout format audio courant (WAV, MP3, M4A, FLAC, OGG, AAC, etc.).
+- [x] Integrer un modele Whisper local.
+- [x] Fournir Large v3 Turbo Q5_0 dans les ressources du paquet, avec verification SHA-256 avant construction.
+- [ ] Valider une installation neuve hors connexion sur chaque plateforme cible.
+- [x] Afficher les segments et horodatages.
+- [x] Sauvegarder un projet dans SQLite.
+- [x] Exporter en TXT, Markdown et JSON.
 - [ ] Tester plusieurs accents francais et niveaux de bruit.
 
-Critere de sortie: un entretien mono-locuteur peut etre importe, transcrit, corrige, sauvegarde et exporte sans connexion.
+Critere de sortie: un entretien mono-locuteur peut etre importe, transcrit, corrige, sauvegarde et exporte sans connexion. Valide sur desktop (build, lancement et transcription reelle verifies). Sur Android, `whisper-rs` compile et linke (voir Strategie Whisper dans `docs/ARCHITECTURE.md`), mais le picker de fichier renvoie une URI `content://` que l'import ne sait pas encore lire directement (copie fichier actuelle suppose un chemin disque reel) — a couvrir en Phase 6.
 
 ## Phase 2 - Edition et nettoyage
 
@@ -61,6 +63,7 @@ Critere de sortie: une session d'une heure reste stable et recuperable, avec une
 
 ## Phase 6 - Android
 
+- [ ] Lire les fichiers importes via une URI `content://` (pas seulement un chemin disque).
 - [ ] Adapter capture, stockage, permissions et cycle de vie.
 - [ ] Optimiser un modele quantifie pour telephone.
 - [ ] Tester interruption, verrouillage d'ecran, batterie et temperature.

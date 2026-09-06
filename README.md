@@ -1,8 +1,8 @@
 # InterviewScribe
 
-InterviewScribe est une application locale de transcription d'entretiens, disponible sur Windows, Linux et Android.
+InterviewScribe est une application locale de transcription d'entretiens, en developpement pour Windows, Linux et Android.
 
-Elle transforme une conversation en texte en temps reel ou depuis un enregistrement, distingue les intervenants et produit deux sorties complementaires:
+Elle vise a transformer une conversation en texte en temps reel ou depuis un enregistrement, distinguer les intervenants et produire deux sorties complementaires:
 
 - une transcription brute, fidele et auditable;
 - une transcription nettoyee, sans hesitations inutiles, sans modifier le sens.
@@ -20,7 +20,7 @@ Elle transforme une conversation en texte en temps reel ou depuis un enregistrem
 
 ## Etat du projet
 
-Le depot contient actuellement le cadrage fonctionnel, l'architecture cible et le squelette de l'interface. L'integration du moteur audio et de Whisper constitue la premiere phase de developpement.
+Le prototype permet d’importer un fichier audio sur bureau, le transcrire avec Whisper local, conserver les segments dans SQLite et exporter en TXT, Markdown ou JSON. Large v3 Turbo est fourni avec les paquets. La capture microphone, la diarisation et le nettoyage reversible restent a implementer.
 
 Consultez:
 
@@ -45,7 +45,7 @@ Consultez:
 | Ubuntu/Debian | paquet `.deb` |
 | Android | paquet `.apk` |
 
-Les artefacts seront generes par GitHub Actions a chaque version publiee. Ils ne sont pas encore disponibles tant que le moteur natif n'est pas integre.
+Les workflows GitHub Actions preparent les artefacts de version avec le modele integre. Une construction reussie ne remplace pas la validation de l’installation et du fonctionnement sur chaque plateforme cible.
 
 ## Developpement
 
@@ -53,11 +53,28 @@ Prerequis cibles: Node.js 22, pnpm, Rust stable et les dependances Tauri 2. Andr
 
 ```bash
 pnpm install
-pnpm dev
+pnpm models:prepare
+pnpm tauri dev
 ```
 
-Le squelette ne pretend pas encore fournir une transcription fonctionnelle. Les commandes natives sont ajoutees progressivement selon la feuille de route.
+La transcription a posteriori est branchee au moteur natif; utiliser l’application Tauri pour acceder a l’import et aux fichiers locaux.
 
 ## Confidentialite
 
 L'audio, les empreintes vocales et les transcriptions sont des donnees sensibles. Aucun envoi reseau ne doit etre ajoute par defaut. Toute fonctionnalite distante devra etre facultative, explicite et documentee.
+
+## Modele integre et construction hors ligne
+
+Les paquets incluent Whisper Large v3 Turbo Q5_0 (environ 575 Mo), avec sa
+licence. Aucun telechargement de modele n’est demande a l’utilisateur apres
+installation. Les entretiens sont transcrits localement.
+
+Pour fabriquer un paquet, recuperer d’abord le modele avec `pnpm models:prepare`
+(connexion necessaire sur la machine de construction). `pnpm models:verify`
+controle sa taille et son SHA-256; cette verification est automatique avant le
+build natif. Ne jamais ajouter le fichier `.bin` a Git. Les workflows de release
+preparent le modele avant de construire les installateurs et l’APK.
+
+L’APK necessite egalement de l’espace pour extraire le modele dans le stockage
+prive. L’installation et les performances Windows/Android restent a valider sur
+leurs plateformes cibles.

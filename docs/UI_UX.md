@@ -40,14 +40,17 @@ bibliotheque, un apercu de l’editeur et les reglages. Sur petit ecran, elle
 passe au-dessus du contenu. Les themes clair, sombre et systeme sont disponibles;
 le choix est conserve uniquement pendant la session.
 
-La bibliotheque presente un etat vide reel. Les extraits affiches sont des
+La bibliotheque charge les entretiens depuis SQLite et presente un etat vide en leur absence. Les extraits affiches sont des
 exemples fictifs explicitement identifies. L’apercu de l’editeur est en lecture
 seule et permet de masquer les horodatages sans supprimer les donnees.
-La preparation explique que la capture et l’import ne sont pas encore integres.
-Aucune sauvegarde, transcription ou capture reelle n’est simulee comme reussie.
+La preparation permet d’importer un fichier et de le transcrire avec Whisper local.
+Le modele Large v3 Turbo est fourni avec l’application. Les reglages affichent
+son nom et son etat, sans bouton de telechargement. Un paquet incomplet affiche
+une erreur demandant de reinstaller la version complete.
+La capture microphone reste indisponible.
 
-Prochaines etapes : connecter la bibliotheque a la persistance native, brancher
-l’import et la progression, puis ajouter l’edition reversible et l’export.
+Prochaines etapes : ajouter une progression detaillee, l’edition reversible et
+la capture microphone. L’export natif propose deja TXT, Markdown et JSON.
 Les etats de chargement, d’erreur de traitement, d’enregistrement et les longs
 entretiens restent a implementer avec ces fonctions. Une validation visuelle
 sur navigateur et sur les plateformes cibles reste necessaire.
