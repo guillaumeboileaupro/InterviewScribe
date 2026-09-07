@@ -2059,6 +2059,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-fs",
+ "tauri-utils",
  "thiserror 2.0.20",
  "which 8.0.6",
  "whisper-rs",

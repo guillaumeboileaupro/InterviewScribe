@@ -20,7 +20,9 @@ Elle vise a transformer une conversation en texte en temps reel ou depuis un enr
 
 ## Etat du projet
 
-Le prototype permet d’importer un fichier audio sur bureau, le transcrire avec Whisper local, conserver les segments dans SQLite et exporter en TXT, Markdown ou JSON. Large v3 Turbo est fourni avec les paquets. La capture microphone, la diarisation et le nettoyage reversible restent a implementer.
+Sur bureau (Windows, Linux): import audio ou capture microphone en direct, transcription Whisper locale, diarisation locale multi-locuteurs (renommage/fusion/reassignation), nettoyage reversible des hesitations, export TXT/Markdown/JSON/SRT/VTT/DOCX/PDF/DOC, et une chaine de publication reelle (executable et installateur NSIS Windows, paquet Debian) verifiee par installation et desinstallation automatisees sur des runners reels.
+
+Sur Android: l'application compile et s'installe (import de fichier via le selecteur systeme, transcription Whisper locale), mais la diarisation y est desactivee (limite technique documentee dans [Architecture](docs/ARCHITECTURE.md)) et la validation complete sur appareil physique reste a faire.
 
 Consultez:
 
@@ -45,7 +47,7 @@ Consultez:
 | Ubuntu/Debian | paquet `.deb` |
 | Android | paquet `.apk` |
 
-Les workflows GitHub Actions preparent les artefacts de version avec le modele integre. Une construction reussie ne remplace pas la validation de l’installation et du fonctionnement sur chaque plateforme cible.
+Les workflows GitHub Actions preparent les artefacts de version avec les modeles integres. Pour Windows et Linux, chaque publication installe et desinstalle reellement l'artefact produit (pas seulement une construction reussie) avant de le publier. L'APK Android est produite et signee, mais sa validation sur appareil physique reste a faire.
 
 ## Developpement
 
@@ -63,18 +65,28 @@ La transcription a posteriori est branchee au moteur natif; utiliser l’applica
 
 L'audio, les empreintes vocales et les transcriptions sont des donnees sensibles. Aucun envoi reseau ne doit etre ajoute par defaut. Toute fonctionnalite distante devra etre facultative, explicite et documentee.
 
-## Modele integre et construction hors ligne
+## Modeles integres et construction hors ligne
 
-Les paquets incluent Whisper Large v3 Turbo Q5_0 (environ 575 Mo), avec sa
-licence. Aucun telechargement de modele n’est demande a l’utilisateur apres
-installation. Les entretiens sont transcrits localement.
+**Ce que recoit l'utilisateur final: uniquement un binaire installable** (l'executable
+Windows, le paquet `.deb` ou l'APK), avec les modeles deja integres a l'interieur.
+Aucun git, aucune compilation, aucune connexion reseau n'est necessaire pour
+installer ou utiliser l'application - tout tourne en local sur sa machine, jamais
+un service distant. Les paquets incluent Whisper Large v3 Turbo Q5_0 (environ
+575 Mo) pour la transcription, et sur bureau uniquement, un second modele
+d'empreintes vocales (WeSpeaker CAM++, environ 28 Mo) pour la diarisation -
+chacun avec sa licence.
 
-Pour fabriquer un paquet, recuperer d’abord le modele avec `pnpm models:prepare`
-(connexion necessaire sur la machine de construction). `pnpm models:verify`
-controle sa taille et son SHA-256; cette verification est automatique avant le
-build natif. Ne jamais ajouter le fichier `.bin` a Git. Les workflows de release
-preparent le modele avant de construire les installateurs et l’APK.
+Ce qui suit ne concerne que la fabrication du paquet par le developpeur, jamais
+l'utilisateur final: pour construire un paquet, recuperer d'abord les modeles
+avec `pnpm models:prepare` (connexion necessaire uniquement sur la machine de
+construction, jamais sur celle de l'utilisateur). `pnpm models:verify` controle
+leur taille et leur SHA-256; cette verification est automatique avant le build
+natif. Ne jamais ajouter ces fichiers a Git. Les workflows de release preparent
+les modeles avant de construire les installateurs et l'APK.
 
-L’APK necessite egalement de l’espace pour extraire le modele dans le stockage
-prive. L’installation et les performances Windows/Android restent a valider sur
-leurs plateformes cibles.
+L'APK necessite egalement de l'espace pour extraire le modele Whisper dans le
+stockage prive (la diarisation n'est pas embarquee sur Android, voir
+[Architecture](docs/ARCHITECTURE.md)). L'installation Windows et Linux est
+verifiee automatiquement (installation, desinstallation, sommes de controle) a
+chaque publication; la validation Android sur appareil physique reel reste a
+faire.

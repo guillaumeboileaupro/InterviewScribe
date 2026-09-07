@@ -144,10 +144,20 @@ pub fn slice_pcm_ms(pcm: &[f32], start_ms: i64, end_ms: i64) -> &[f32] {
 /// ONNX model or the `ort`/`pyannote-rs` types directly - it only ever sees
 /// `&[f32]` embeddings, which keeps its logic testable with hand-built
 /// vectors and no model file (see tests below).
+///
+/// Not available on Android: `ort-sys`'s prebuilt-binary table has no
+/// Android entry at all (confirmed by reading its build.rs - not a missing
+/// NDK/cmake toolchain issue like whisper-rs-sys had, an actual gap in what
+/// upstream publishes), so `pyannote-rs`/`ort` are Android-excluded at the
+/// Cargo.toml dependency level too (`[target.'cfg(not(target_os =
+/// "android"))'.dependencies]`) - this type simply cannot exist on that
+/// target. See docs/ARCHITECTURE.md "Diarisation".
+#[cfg(not(target_os = "android"))]
 pub struct EmbeddingExtractor {
     inner: pyannote_rs::EmbeddingExtractor,
 }
 
+#[cfg(not(target_os = "android"))]
 impl EmbeddingExtractor {
     pub fn load(model_path: &std::path::Path) -> Result<Self, AppError> {
         let inner = pyannote_rs::EmbeddingExtractor::new(model_path)

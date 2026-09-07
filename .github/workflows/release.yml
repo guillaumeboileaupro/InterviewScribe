@@ -132,10 +132,37 @@ jobs:
         run: pnpm models:prepare
       - name: Initialize Android project
         run: pnpm tauri android init --ci
-      - name: Build unsigned APK
+      - name: Decode signing keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+      - name: Apply release signing configuration
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: bash scripts/android-sign.sh "$RUNNER_TEMP/release.jks"
+      - name: Build signed release APK
         run: bash scripts/tauri-android.sh build --apk
+      - name: Verify the APK is actually signed
+        run: |
+          set -euo pipefail
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' | head -n1)
+          build_tools=$(find "$ANDROID_HOME/build-tools" -maxdepth 1 -mindepth 1 -type d | sort -V | tail -n1)
+          "$build_tools/apksigner" verify --print-certs "$apk"
+          echo "signature verified: $apk"
       - uses: actions/upload-artifact@v4
         with:
           name: interviewscribe-android-apk
           path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+      - name: Publish checksum
+        run: |
+          set -euo pipefail
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' | head -n1)
+          (cd "$(dirname "$apk")" && sha256sum "$(basename "$apk")") > "$(basename "$apk").sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: interviewscribe-android-apk-checksum
+          path: "*.sha256"
           if-no-files-found: error

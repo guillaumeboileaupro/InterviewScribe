@@ -11,5 +11,10 @@ elseif("$ENV{TARGET}" STREQUAL "x86_64-linux-android")
 else()
   message(FATAL_ERROR "Unsupported Cargo Android target: $ENV{TARGET}")
 endif()
-set(ANDROID_PLATFORM "android-24" CACHE STRING "Android API" FORCE)
+# 26, not 24: cpal's Android backend links against AAudio unconditionally,
+# and libaaudio.so only exists in the NDK sysroot from API 26 onward - a
+# real link failure ("unable to find library -laaudio") caught by an actual
+# build, not a guess. Must match bundle.android.minSdkVersion in
+# tauri.conf.json, which gates Gradle's own compile step the same way.
+set(ANDROID_PLATFORM "android-26" CACHE STRING "Android API" FORCE)
 include("$ENV{ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake")

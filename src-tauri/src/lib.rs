@@ -55,7 +55,11 @@ fn import_interview(
     let conn = lock_db(&db)?;
     let interview = db::interviews::create(&conn, &title, language.as_deref(), &source_path)?;
     let audio_dir = app_data_subdir(&app, "audio")?;
+    #[cfg(not(target_os = "android"))]
     let dest = audio::import::copy_into_storage(Path::new(&source_path), &audio_dir, interview.id)?;
+    #[cfg(target_os = "android")]
+    let dest =
+        audio::import::copy_content_uri_into_storage(&app, &source_path, &audio_dir, interview.id)?;
     db::interviews::set_audio_path(&conn, interview.id, &dest.to_string_lossy())?;
     db::interviews::get(&conn, interview.id)
 }
@@ -143,33 +147,16 @@ fn transcribe_local(
         .transcribe(&pcm, interview.language.as_deref())
         .map_err(mark_error)?;
 
-    let transcription::model::ModelStatus::Ready {
-        path: diarization_model_path,
-        ..
-    } = transcription::model::ensure_manifest(app, transcription::model::diarization_manifest()?)
-        .map_err(mark_error)?;
-    let mut extractor = diarization::EmbeddingExtractor::load(Path::new(&diarization_model_path))
-        .map_err(mark_error)?;
-    let mut clusterer = diarization::Clusterer::new(expected_speaker_count);
-    let assignments = raw_segments
-        .iter()
-        .map(|segment| {
-            let slice = diarization::slice_pcm_ms(&pcm, segment.start_ms, segment.end_ms);
-            let embedding = extractor.extract(slice)?;
-            Ok(clusterer.assign(&embedding))
-        })
-        .collect::<Result<Vec<diarization::Assignment>, AppError>>()
-        .map_err(mark_error)?;
-
     let conn = lock_db(db)?;
-    let speakers: Vec<db::models::Speaker> = (1..=clusterer.speaker_count())
-        .map(|index| db::speakers::create_numbered(&conn, interview_id, index))
-        .collect::<Result<_, _>>()?;
-    let speaker_ids: Vec<i64> = assignments
-        .iter()
-        .map(|assignment| speakers[assignment.speaker_index].id)
-        .collect();
-    let uncertain_flags: Vec<bool> = assignments.iter().map(|a| a.uncertain).collect();
+    let (speaker_ids, uncertain_flags) = assign_speakers(
+        app,
+        &conn,
+        interview_id,
+        &raw_segments,
+        &pcm,
+        expected_speaker_count,
+    )
+    .map_err(mark_error)?;
 
     let new_segments = transcription::to_new_segments(raw_segments, &speaker_ids);
     let inserted_ids = db::segments::insert_batch(&conn, interview_id, &new_segments)?;
@@ -183,6 +170,62 @@ fn transcribe_local(
     }
     db::interviews::update_status(&conn, interview_id, "transcribed", None)?;
     db::get_detail(&conn, interview_id)
+}
+
+/// Diarizes a whole interview's segments at once, one persistent `Clusterer`
+/// for the interview so speaker identity stays consistent across it.
+#[cfg(not(target_os = "android"))]
+fn assign_speakers(
+    app: &tauri::AppHandle,
+    conn: &rusqlite::Connection,
+    interview_id: i64,
+    raw_segments: &[transcription::RawSegment],
+    pcm: &[f32],
+    expected_speaker_count: Option<usize>,
+) -> Result<(Vec<i64>, Vec<bool>), AppError> {
+    let transcription::model::ModelStatus::Ready {
+        path: diarization_model_path,
+        ..
+    } = transcription::model::ensure_manifest(app, transcription::model::diarization_manifest()?)?;
+    let mut extractor = diarization::EmbeddingExtractor::load(Path::new(&diarization_model_path))?;
+    let mut clusterer = diarization::Clusterer::new(expected_speaker_count);
+    let assignments = raw_segments
+        .iter()
+        .map(|segment| {
+            let slice = diarization::slice_pcm_ms(pcm, segment.start_ms, segment.end_ms);
+            let embedding = extractor.extract(slice)?;
+            Ok(clusterer.assign(&embedding))
+        })
+        .collect::<Result<Vec<diarization::Assignment>, AppError>>()?;
+
+    let speakers: Vec<db::models::Speaker> = (1..=clusterer.speaker_count())
+        .map(|index| db::speakers::create_numbered(conn, interview_id, index))
+        .collect::<Result<_, _>>()?;
+    let speaker_ids = assignments
+        .iter()
+        .map(|assignment| speakers[assignment.speaker_index].id)
+        .collect();
+    let uncertain_flags = assignments.iter().map(|a| a.uncertain).collect();
+    Ok((speaker_ids, uncertain_flags))
+}
+
+/// Diarization needs `ort`/`pyannote-rs`, which has no Android build at all
+/// (see docs/ARCHITECTURE.md "Diarisation") - Android falls back to the same
+/// single-speaker behavior Phase 1 already shipped and tested, rather than
+/// failing transcription entirely.
+#[cfg(target_os = "android")]
+fn assign_speakers(
+    _app: &tauri::AppHandle,
+    conn: &rusqlite::Connection,
+    interview_id: i64,
+    raw_segments: &[transcription::RawSegment],
+    _pcm: &[f32],
+    _expected_speaker_count: Option<usize>,
+) -> Result<(Vec<i64>, Vec<bool>), AppError> {
+    let speaker = db::speakers::create_numbered(conn, interview_id, 1)?;
+    let speaker_ids = vec![speaker.id; raw_segments.len()];
+    let uncertain_flags = vec![false; raw_segments.len()];
+    Ok((speaker_ids, uncertain_flags))
 }
 
 #[tauri::command]
@@ -353,13 +396,10 @@ fn run_recording_processing(
             Ok(transcriber) => transcriber,
             Err(err) => return report_recording_error(&app, interview_id, err),
         };
-    let mut extractor =
-        match diarization::EmbeddingExtractor::load(Path::new(&diarization_model_path)) {
-            Ok(extractor) => extractor,
-            Err(err) => return report_recording_error(&app, interview_id, err),
-        };
-    let mut clusterer = diarization::Clusterer::new(expected_speaker_count);
-    let mut speakers: Vec<db::models::Speaker> = Vec::new();
+    let mut assigner = match SpeakerAssigner::new(&diarization_model_path, expected_speaker_count) {
+        Ok(assigner) => assigner,
+        Err(err) => return report_recording_error(&app, interview_id, err),
+    };
     let mut elapsed_ms: i64 = 0;
 
     for event in events {
@@ -380,9 +420,7 @@ fn run_recording_processing(
                     &app,
                     interview_id,
                     &transcriber,
-                    &mut extractor,
-                    &mut clusterer,
-                    &mut speakers,
+                    &mut assigner,
                     elapsed_ms,
                     &pcm,
                 );
@@ -400,14 +438,11 @@ fn run_recording_processing(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn process_recording_chunk(
     app: &tauri::AppHandle,
     interview_id: i64,
     transcriber: &transcription::whisper_cpp::WhisperCppTranscriber,
-    extractor: &mut diarization::EmbeddingExtractor,
-    clusterer: &mut diarization::Clusterer,
-    speakers: &mut Vec<db::models::Speaker>,
+    assigner: &mut SpeakerAssigner,
     time_offset_ms: i64,
     pcm: &[f32],
 ) -> Result<(), AppError> {
@@ -416,28 +451,10 @@ fn process_recording_chunk(
         return Ok(());
     }
 
-    let assignments = raw_segments
-        .iter()
-        .map(|segment| {
-            let slice = diarization::slice_pcm_ms(pcm, segment.start_ms, segment.end_ms);
-            let embedding = extractor.extract(slice)?;
-            Ok(clusterer.assign(&embedding))
-        })
-        .collect::<Result<Vec<diarization::Assignment>, AppError>>()?;
-
     let db = app.state::<DbState>();
     let conn = lock_db(&db)?;
-
-    while speakers.len() < clusterer.speaker_count() {
-        let index = speakers.len() + 1;
-        speakers.push(db::speakers::create_numbered(&conn, interview_id, index)?);
-    }
-
-    let speaker_ids: Vec<i64> = assignments
-        .iter()
-        .map(|assignment| speakers[assignment.speaker_index].id)
-        .collect();
-    let uncertain_flags: Vec<bool> = assignments.iter().map(|a| a.uncertain).collect();
+    let (speaker_ids, uncertain_flags) =
+        assigner.assign_chunk(&conn, interview_id, &raw_segments, pcm)?;
 
     let offset_segments: Vec<transcription::RawSegment> = raw_segments
         .into_iter()
@@ -457,6 +474,96 @@ fn process_recording_chunk(
         }
     }
     Ok(())
+}
+
+/// Owns whatever state speaker assignment needs across an entire recording
+/// session. On desktop, one persistent diarization `Clusterer` so speaker
+/// identity stays stable chunk to chunk; on Android, just the single speaker
+/// every segment is attributed to, since diarization isn't available there
+/// (see docs/ARCHITECTURE.md "Diarisation") - same fallback `assign_speakers`
+/// uses for the a-posteriori pipeline, kept alive across chunks instead of
+/// recreated once per file.
+enum SpeakerAssigner {
+    #[cfg(not(target_os = "android"))]
+    Diarizing {
+        extractor: diarization::EmbeddingExtractor,
+        clusterer: diarization::Clusterer,
+        speakers: Vec<db::models::Speaker>,
+    },
+    #[cfg(target_os = "android")]
+    SingleSpeaker {
+        speaker: Option<db::models::Speaker>,
+    },
+}
+
+impl SpeakerAssigner {
+    #[cfg(not(target_os = "android"))]
+    fn new(
+        diarization_model_path: &str,
+        expected_speaker_count: Option<usize>,
+    ) -> Result<Self, AppError> {
+        let extractor = diarization::EmbeddingExtractor::load(Path::new(diarization_model_path))?;
+        Ok(Self::Diarizing {
+            extractor,
+            clusterer: diarization::Clusterer::new(expected_speaker_count),
+            speakers: Vec::new(),
+        })
+    }
+
+    #[cfg(target_os = "android")]
+    fn new(
+        _diarization_model_path: &str,
+        _expected_speaker_count: Option<usize>,
+    ) -> Result<Self, AppError> {
+        Ok(Self::SingleSpeaker { speaker: None })
+    }
+
+    fn assign_chunk(
+        &mut self,
+        conn: &rusqlite::Connection,
+        interview_id: i64,
+        raw_segments: &[transcription::RawSegment],
+        pcm: &[f32],
+    ) -> Result<(Vec<i64>, Vec<bool>), AppError> {
+        match self {
+            #[cfg(not(target_os = "android"))]
+            Self::Diarizing {
+                extractor,
+                clusterer,
+                speakers,
+            } => {
+                let assignments = raw_segments
+                    .iter()
+                    .map(|segment| {
+                        let slice =
+                            diarization::slice_pcm_ms(pcm, segment.start_ms, segment.end_ms);
+                        let embedding = extractor.extract(slice)?;
+                        Ok(clusterer.assign(&embedding))
+                    })
+                    .collect::<Result<Vec<diarization::Assignment>, AppError>>()?;
+                while speakers.len() < clusterer.speaker_count() {
+                    let index = speakers.len() + 1;
+                    speakers.push(db::speakers::create_numbered(conn, interview_id, index)?);
+                }
+                let speaker_ids = assignments
+                    .iter()
+                    .map(|assignment| speakers[assignment.speaker_index].id)
+                    .collect();
+                let uncertain_flags = assignments.iter().map(|a| a.uncertain).collect();
+                Ok((speaker_ids, uncertain_flags))
+            }
+            #[cfg(target_os = "android")]
+            Self::SingleSpeaker { speaker } => {
+                if speaker.is_none() {
+                    *speaker = Some(db::speakers::create_numbered(conn, interview_id, 1)?);
+                }
+                let id = speaker.as_ref().expect("just set above").id;
+                let speaker_ids = vec![id; raw_segments.len()];
+                let uncertain_flags = vec![false; raw_segments.len()];
+                Ok((speaker_ids, uncertain_flags))
+            }
+        }
+    }
 }
 
 fn report_recording_error(app: &tauri::AppHandle, interview_id: i64, err: AppError) {

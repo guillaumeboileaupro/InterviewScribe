@@ -37,6 +37,9 @@
     "longDescription": "Transcription locale en temps reel ou a posteriori avec separation des intervenants.",
     "resources": {
       "resources/models/": "models/"
+    },
+    "android": {
+      "minSdkVersion": 26
     }
   }
 }

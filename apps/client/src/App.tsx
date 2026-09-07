@@ -198,7 +198,12 @@ export default function App() {
         ],
       });
       if (!selected || Array.isArray(selected)) return;
-      const fileName = selected.split(/[/\\]/).pop() ?? selected;
+      // On Android, `selected` is a `content://` URI, not a path - its last
+      // segment is an opaque, percent-encoded document id, not a filename.
+      // A generic, honestly-labeled title beats showing that garbled id.
+      const fileName = /^[a-z][a-z0-9+.-]*:\/\//i.test(selected)
+        ? `Entretien du ${new Date().toLocaleDateString()}`
+        : (selected.split(/[/\\]/).pop() ?? selected);
       const interview = await importInterview(
         prepareTitle.trim() || fileName,
         selected,

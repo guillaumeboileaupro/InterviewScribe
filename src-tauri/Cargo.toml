@@ -11,6 +11,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+tauri-utils = "2"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -27,14 +28,21 @@ regex = "1"
 docx-rs = "0.4"
 genpdf = "0.2"
 which = "8"
+cpal = "0.18.2"
+hound = "3.5.1"
+
+[target.'cfg(target_os = "android")'.dependencies]
+tauri-plugin-fs = "2"
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
+# Diarization (pyannote-rs/ort) is desktop-only: ort-sys's prebuilt-binary
+# table publishes no Android artifact at all (verified by reading its
+# build.rs - not a missing NDK/cmake toolchain issue, an actual gap in what
+# upstream ships), so it must not even be compiled for that target, not just
+# gated at the call site - see docs/ARCHITECTURE.md "Diarisation".
 pyannote-rs = "0.3"
 # Pinned: pyannote-rs 0.3.4 was built against this exact rc; the newer
 # 2.0.0-rc.13 that cargo resolves by default fails to compile (Send/Sync
 # regression on OperatorDomain/ErasedOperator). Verified by real compilation
 # before pinning - see docs/ARCHITECTURE.md "Diarisation".
 ort = "=2.0.0-rc.10"
-cpal = "0.18.2"
-hound = "3.5.1"
-
-[target.'cfg(target_os = "android")'.dependencies]
-tauri-plugin-fs = "2"
