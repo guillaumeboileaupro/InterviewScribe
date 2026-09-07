@@ -120,7 +120,12 @@ jobs:
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+          # arm64-v8a only for now: armv7 hit a real bindgen/NDK sysroot
+          # mismatch on this runner's NDK (whisper-rs-sys generated bogus
+          # struct-offset constants), not worth chasing for a legacy 32-bit
+          # ABI when aarch64 already covers virtually every real device -
+          # see docs/ARCHITECTURE.md "Livraison".
+          targets: aarch64-linux-android
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -143,7 +148,7 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: bash scripts/android-sign.sh "$RUNNER_TEMP/release.jks"
       - name: Build signed release APK
-        run: bash scripts/tauri-android.sh build --apk
+        run: bash scripts/tauri-android.sh build --apk --target aarch64
       - name: Verify the APK is actually signed
         run: |
           set -euo pipefail
