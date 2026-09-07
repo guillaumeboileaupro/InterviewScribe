@@ -4,22 +4,24 @@ InterviewScribe est une application locale de transcription d'entretiens pour Wi
 
 Tout tourne en local sur la machine de l'utilisateur. Aucune connexion reseau, aucun compte, aucun envoi d'audio ou de transcription vers un service distant.
 
-## Telechargement et installation
+## Telecharger
 
-Les paquets se trouvent sur la page [Releases](https://github.com/guillaumeboileaupro/InterviewScribe/releases/latest). Chaque version fournit, avec les modeles deja integres a l'interieur:
+Version publique actuelle: [InterviewScribe v0.1.0](https://github.com/guillaumeboileaupro/InterviewScribe/releases/tag/v0.1.0).
 
-| Plateforme | Fichier a telecharger | Installation |
-| --- | --- | --- |
-| Windows | `InterviewScribe_x.y.z_x64-setup.exe` | Lancer l'installateur et suivre les etapes. |
-| Linux (Debian/Ubuntu) | `InterviewScribe_x.y.z_amd64.deb` | `sudo dpkg -i InterviewScribe_x.y.z_amd64.deb` (ou double-clic dans le gestionnaire de paquets). |
-| Android | `InterviewScribe_x.y.z_arm64-v8a.apk` | Telecharger l'APK sur l'appareil, autoriser l'installation depuis une source inconnue si demande, puis l'ouvrir pour installer. |
+- Windows — [telecharger l'installateur `.exe`](https://github.com/guillaumeboileaupro/InterviewScribe/releases/download/v0.1.0/InterviewScribe_0.1.0_x64-setup.exe) — lancer le fichier et suivre les etapes.
+- Ubuntu/Debian — [telecharger le paquet `.deb`](https://github.com/guillaumeboileaupro/InterviewScribe/releases/download/v0.1.0/InterviewScribe_0.1.0_amd64.deb) — `sudo dpkg -i InterviewScribe_0.1.0_amd64.deb` (ou double-clic dans le gestionnaire de paquets).
+- Android — [telecharger le paquet `.apk`](https://github.com/guillaumeboileaupro/InterviewScribe/releases/download/v0.1.0/InterviewScribe_0.1.0_arm64-v8a.apk) — a ouvrir sur l'appareil une fois telecharge.
 
-Aucun git, aucune compilation, aucune connexion reseau n'est necessaire pour installer ou utiliser l'application: le fichier telecharge est autosuffisant.
+Aucun git, aucune compilation, aucune connexion reseau n'est necessaire pour installer ou utiliser l'application: le fichier telecharge est autosuffisant, avec les modeles deja integres a l'interieur.
+
+L'installateur Windows n'est pas encore signe numeriquement. Windows SmartScreen peut afficher un avertissement au premier lancement, et le navigateur peut aussi signaler le fichier comme peu telecharge (avertissement lie a la nouveaute du fichier, pas a un probleme reel): utiliser « Conserver quand meme » dans la barre de telechargement. Verifier que le fichier provient bien de la page officielle de la release ci-dessus avant de l'executer. Le `.exe` est construit et son installation/desinstallation verifiees automatiquement par la CI, mais n'a pas encore ete teste manuellement sur une machine Windows.
+
+L'APK Android n'est pas distribue via le Play Store: il est signe avec une cle de release dediee au projet, mais Android affichera un avertissement car l'application ne provient pas d'un magasin reconnu. Autoriser l'installation depuis le navigateur ou le gestionnaire de fichiers (« Installer des applications inconnues ») pour ce fichier uniquement, apres avoir verifie qu'il provient bien de la page officielle de la release. Compatible Android 8.0 (API 26) et plus, architecture ARM64 (arm64-v8a) uniquement — **aucun test sur appareil ou emulateur physique n'a ete effectue**, uniquement verifie par compilation et signature reelles en CI (voir [Architecture](docs/ARCHITECTURE.md)).
 
 Chaque fichier est accompagne d'une somme de controle `.sha256`. Pour la verifier avant installation:
 
 ```bash
-sha256sum -c InterviewScribe_x.y.z_amd64.deb.sha256
+sha256sum -c InterviewScribe_0.1.0_amd64.deb.sha256
 ```
 
 (remplacer par le nom du fichier correspondant a votre plateforme).
@@ -41,6 +43,7 @@ L'audio, les empreintes vocales et les transcriptions sont des donnees sensibles
 - [Vision produit](docs/PRODUCT.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Planification](docs/ROADMAP.md)
+- [Strategie de test](docs/TEST_STRATEGY.md)
 - [Principes UI/UX](docs/UI_UX.md)
 
 ## Developpement (contributeurs)
