@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { listen } from "@tauri-apps/api/event";
 import {
   applySegmentCleanup,
   checkDocExportAvailable,
@@ -9,11 +10,16 @@ import {
   exportInterviewDoc,
   getInterview,
   importInterview,
+  listInputDevices,
   listInterviews,
   mergeSpeakers,
+  pauseRecording,
   reassignSegmentSpeaker,
   renameSpeaker,
+  resumeRecording,
   saveSegmentEdit,
+  startRecording,
+  stopRecording,
   transcribeInterview,
   undoSegmentEdit,
   type DiffPart,
@@ -91,6 +97,20 @@ export default function App() {
   const [speakerDraftName, setSpeakerDraftName] = useState("");
   const [mergeTarget, setMergeTarget] = useState<Record<number, string>>({});
 
+  const [inputDevices, setInputDevices] = useState<string[]>([]);
+  const [selectedDevice, setSelectedDevice] = useState("");
+  const [recordingStatus, setRecordingStatus] = useState<
+    "idle" | "recording" | "paused"
+  >("idle");
+  const [recordingInterviewId, setRecordingInterviewId] = useState<
+    number | null
+  >(null);
+  const [recordingSegments, setRecordingSegments] = useState<Segment[]>([]);
+  const [recordingLevel, setRecordingLevel] = useState(0);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [recordingError, setRecordingError] = useState<string | null>(null);
+  const recordingInterviewIdRef = useRef<number | null>(null);
+
   const refreshInterviews = () => {
     listInterviews()
       .then(setInterviews)
@@ -112,7 +132,46 @@ export default function App() {
         .then(setDocAvailable)
         .catch(() => setDocAvailable(false));
     }
+    if (page === "prepare") {
+      listInputDevices()
+        .then(setInputDevices)
+        .catch(() => setInputDevices([]));
+    }
   }, [page]);
+
+  useEffect(() => {
+    recordingInterviewIdRef.current = recordingInterviewId;
+  }, [recordingInterviewId]);
+
+  useEffect(() => {
+    const unlistenLevel = listen<number>("recording-level", (event) => {
+      setRecordingLevel(event.payload);
+    });
+    const unlistenSegments = listen<number>("segments-updated", (event) => {
+      if (event.payload !== recordingInterviewIdRef.current) return;
+      getInterview(event.payload)
+        .then((detail) => setRecordingSegments(detail.segments))
+        .catch(() => {});
+    });
+    const unlistenError = listen<string>("recording-error", (event) => {
+      setRecordingError(event.payload);
+    });
+    return () => {
+      // Fire-and-forget: nothing meaningful to do if unregistering a
+      // listener fails during teardown (e.g. the window is already closing).
+      unlistenLevel.then((unlisten) => unlisten()).catch(() => {});
+      unlistenSegments.then((unlisten) => unlisten()).catch(() => {});
+      unlistenError.then((unlisten) => unlisten()).catch(() => {});
+    };
+  }, []);
+
+  useEffect(() => {
+    if (recordingStatus !== "recording") return;
+    const interval = setInterval(() => {
+      setRecordingSeconds((seconds) => seconds + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [recordingStatus]);
 
   const openInterview = (interviewId: number) => {
     getInterview(interviewId)
@@ -339,6 +398,59 @@ export default function App() {
       updateSegmentInPlace(segment);
     } catch (err) {
       setInterviewError(String(err));
+    }
+  };
+
+  const handleStartRecording = async () => {
+    setRecordingError(null);
+    try {
+      const parsedCount = Number.parseInt(expectedSpeakerCount, 10);
+      const interview = await startRecording(
+        prepareTitle.trim() || "Session en direct",
+        selectedDevice || undefined,
+        Number.isFinite(parsedCount) && parsedCount > 0
+          ? parsedCount
+          : undefined,
+      );
+      setRecordingInterviewId(interview.id);
+      setRecordingSegments([]);
+      setRecordingSeconds(0);
+      setRecordingStatus("recording");
+    } catch (err) {
+      setRecordingError(String(err));
+    }
+  };
+
+  const handlePauseRecording = async () => {
+    try {
+      await pauseRecording();
+      setRecordingStatus("paused");
+    } catch (err) {
+      setRecordingError(String(err));
+    }
+  };
+
+  const handleResumeRecording = async () => {
+    try {
+      await resumeRecording(selectedDevice || undefined);
+      setRecordingStatus("recording");
+    } catch (err) {
+      setRecordingError(String(err));
+    }
+  };
+
+  const handleStopRecording = async () => {
+    try {
+      const detail = await stopRecording();
+      setRecordingStatus("idle");
+      setRecordingInterviewId(null);
+      setRecordingSegments([]);
+      setRecordingSeconds(0);
+      refreshInterviews();
+      setCurrentInterview(detail);
+      setPage("interview");
+    } catch (err) {
+      setRecordingError(String(err));
     }
   };
 
@@ -950,10 +1062,143 @@ export default function App() {
                     </button>
                   </>
                 ) : (
-                  <div className="notice" role="status">
-                    La capture microphone n’est pas encore disponible dans cette
-                    version. Aucun enregistrement n’est lancé.
-                  </div>
+                  <>
+                    <label className="field">
+                      Titre de l’entretien (optionnel)
+                      <input
+                        type="text"
+                        value={prepareTitle}
+                        onChange={(event) =>
+                          setPrepareTitle(event.target.value)
+                        }
+                        placeholder="Session en direct"
+                        disabled={recordingStatus !== "idle"}
+                      />
+                    </label>
+                    <label className="field">
+                      Microphone
+                      <select
+                        value={selectedDevice}
+                        onChange={(event) =>
+                          setSelectedDevice(event.target.value)
+                        }
+                        disabled={recordingStatus !== "idle"}
+                      >
+                        <option value="">Peripherique par defaut</option>
+                        {inputDevices.map((device) => (
+                          <option key={device} value={device}>
+                            {device}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="field">
+                      Nombre de personnes (optionnel)
+                      <input
+                        type="number"
+                        min={1}
+                        value={expectedSpeakerCount}
+                        onChange={(event) =>
+                          setExpectedSpeakerCount(event.target.value)
+                        }
+                        placeholder="Estimation automatique si vide"
+                        disabled={recordingStatus !== "idle"}
+                      />
+                    </label>
+
+                    {recordingError && (
+                      <div className="notice" role="alert">
+                        {recordingError}
+                      </div>
+                    )}
+
+                    {recordingStatus !== "idle" && (
+                      <div
+                        className="notice"
+                        role="status"
+                        aria-label={
+                          recordingStatus === "recording"
+                            ? "Enregistrement en cours"
+                            : "Enregistrement en pause"
+                        }
+                      >
+                        <strong>
+                          {recordingStatus === "recording"
+                            ? "● Enregistrement"
+                            : "‖ Pause"}
+                        </strong>{" "}
+                        · {formatTimestamp(recordingSeconds * 1000)}
+                        <div className="levelMeter" aria-hidden="true">
+                          <div
+                            className="levelMeterFill"
+                            style={{
+                              width: `${Math.min(100, Math.round(recordingLevel * 400))}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="buttonRow">
+                      {recordingStatus === "idle" && (
+                        <button
+                          className="primary"
+                          onClick={handleStartRecording}
+                        >
+                          Demarrer l’enregistrement
+                        </button>
+                      )}
+                      {recordingStatus === "recording" && (
+                        <button
+                          className="secondary"
+                          onClick={handlePauseRecording}
+                        >
+                          Pause
+                        </button>
+                      )}
+                      {recordingStatus === "paused" && (
+                        <button
+                          className="secondary"
+                          onClick={handleResumeRecording}
+                        >
+                          Reprendre
+                        </button>
+                      )}
+                      {recordingStatus !== "idle" && (
+                        <button
+                          className="primary"
+                          onClick={handleStopRecording}
+                        >
+                          Arreter et terminer
+                        </button>
+                      )}
+                    </div>
+
+                    {recordingStatus !== "idle" && (
+                      <section className="transcript">
+                        <div className="transcriptToolbar">
+                          <strong>Transcription en direct</strong>
+                        </div>
+                        {recordingSegments.length === 0 ? (
+                          <p className="muted">
+                            En attente du premier segment stabilise…
+                          </p>
+                        ) : (
+                          recordingSegments.map((segment) => (
+                            <article className="segment" key={segment.id}>
+                              <div className="segmentMeta">
+                                <time>{formatTimestamp(segment.start_ms)}</time>
+                                {segment.status === "uncertain" && (
+                                  <span className="muted">incertain</span>
+                                )}
+                              </div>
+                              <p>{segment.raw_text}</p>
+                            </article>
+                          ))
+                        )}
+                      </section>
+                    )}
+                  </>
                 )}
               </section>
             </>

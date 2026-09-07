@@ -31,16 +31,116 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Horodatages" }));
     expect(screen.getByText("00:18")).toBeInTheDocument();
   });
-  it("explains that capture is unavailable before any recording", () => {
+  it("starts a live recording session and shows its controls", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten") return null;
+      switch (cmd) {
+        case "list_interviews":
+          return [];
+        case "list_input_devices":
+          return ["Microphone USB"];
+        case "start_recording":
+          return {
+            id: 9,
+            title: "Session en direct",
+            language: null,
+            mode: "realtime",
+            audio_path: "/audio/9.wav",
+            status: "transcribing",
+            error_message: null,
+            created_at: "0",
+            updated_at: "0",
+          };
+        default:
+          throw new Error(`unexpected command: ${cmd}`);
+      }
+    });
+
     render(<App />);
     fireEvent.click(screen.getByRole("button", { name: /Nouvel entretien/ }));
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "Aucun enregistrement n’est lancé",
+    expect(
+      await screen.findByRole("option", { name: "Microphone USB" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Demarrer l’enregistrement" }),
     );
+
+    expect(
+      await screen.findByRole("status", { name: "Enregistrement en cours" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Arreter et terminer" }),
+    ).toBeInTheDocument();
+  });
+
+  it("stops a recording and switches to the finished interview", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten") return null;
+      switch (cmd) {
+        case "list_interviews":
+          return [];
+        case "list_input_devices":
+          return [];
+        case "start_recording":
+          return {
+            id: 9,
+            title: "Session en direct",
+            language: null,
+            mode: "realtime",
+            audio_path: "/audio/9.wav",
+            status: "transcribing",
+            error_message: null,
+            created_at: "0",
+            updated_at: "0",
+          };
+        case "stop_recording":
+          return {
+            interview: {
+              id: 9,
+              title: "Session en direct",
+              language: null,
+              mode: "realtime",
+              audio_path: "/audio/9.wav",
+              status: "transcribed",
+              error_message: null,
+              created_at: "0",
+              updated_at: "0",
+            },
+            speakers: [],
+            segments: [],
+          };
+        default:
+          throw new Error(`unexpected command: ${cmd}`);
+      }
+    });
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /Nouvel entretien/ }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Demarrer l’enregistrement" }),
+    );
+    await screen.findByRole("button", { name: "Arreter et terminer" });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Arreter et terminer" }),
+    );
+
+    expect(
+      await screen.findByRole("heading", {
+        level: 1,
+        name: "Session en direct",
+      }),
+    ).toBeInTheDocument();
   });
 
   it("lists real interviews from the backend instead of the empty state", async () => {
     mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten") return null;
       if (cmd === "list_interviews") {
         return [
           {
@@ -72,6 +172,8 @@ describe("App", () => {
   it("shows the bundled Turbo model without any download action", async () => {
     const commands: string[] = [];
     mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten") return null;
       commands.push(cmd);
       if (cmd === "list_interviews") return [];
       if (cmd === "ensure_whisper_model")
@@ -96,6 +198,8 @@ describe("App", () => {
 
   it("imports and transcribes a file, then shows the real segments", async () => {
     mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten") return null;
       switch (cmd) {
         case "list_interviews":
           return [];
@@ -181,6 +285,8 @@ describe("App", () => {
 
   it("cleans a segment and shows the removed hesitation struck through", async () => {
     mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten") return null;
       switch (cmd) {
         case "list_interviews":
           return [];
@@ -289,6 +395,8 @@ describe("App", () => {
 
   it("undoes the last edit on a segment", async () => {
     mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten") return null;
       switch (cmd) {
         case "list_interviews":
           return [
@@ -384,6 +492,8 @@ describe("App", () => {
 
   it("saves a manual edit to a segment", async () => {
     mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten") return null;
       switch (cmd) {
         case "list_interviews":
           return [
@@ -461,6 +571,8 @@ describe("App", () => {
 
   it("renames a speaker without inventing one automatically", async () => {
     mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten") return null;
       switch (cmd) {
         case "list_interviews":
           return [
@@ -530,6 +642,8 @@ describe("App", () => {
   it("merges a speaker into another and refreshes the segment list", async () => {
     let merged = false;
     mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten") return null;
       switch (cmd) {
         case "list_interviews":
           return [
@@ -633,6 +747,8 @@ describe("App", () => {
 
   it("reassigns a segment to a different speaker", async () => {
     mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten") return null;
       switch (cmd) {
         case "list_interviews":
           return [
@@ -724,6 +840,8 @@ describe("App", () => {
 
   it("flags a low-confidence speaker attribution as uncertain", async () => {
     mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten") return null;
       switch (cmd) {
         case "list_interviews":
           return [
@@ -792,6 +910,8 @@ describe("model prerequisites", () => {
   it("does not download or import automatically when the model is missing", async () => {
     const commands: string[] = [];
     mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten") return null;
       commands.push(cmd);
       if (cmd === "list_interviews") return [];
       if (cmd === "ensure_whisper_model")
@@ -819,6 +939,8 @@ describe("model prerequisites", () => {
 
   it("reports file picker errors and allows another attempt", async () => {
     mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten") return null;
       if (cmd === "list_interviews") return [];
       if (cmd === "ensure_whisper_model")
         return { state: "Ready", path: "/models/model.bin" };
@@ -845,6 +967,8 @@ describe("model prerequisites", () => {
 
   it("disables the DOC export button when LibreOffice is unavailable", async () => {
     mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten") return null;
       switch (cmd) {
         case "list_interviews":
           return [

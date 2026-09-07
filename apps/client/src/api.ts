@@ -184,3 +184,31 @@ export function exportInterviewDoc(
     destinationPath,
   });
 }
+
+export function listInputDevices(): Promise<string[]> {
+  return invoke("list_input_devices");
+}
+
+export function startRecording(
+  title: string,
+  deviceName?: string,
+  expectedSpeakerCount?: number,
+): Promise<Interview> {
+  return invoke("start_recording", {
+    title,
+    deviceName,
+    expectedSpeakerCount,
+  });
+}
+
+export function pauseRecording(): Promise<void> {
+  return invoke("pause_recording");
+}
+
+export function resumeRecording(deviceName?: string): Promise<void> {
+  return invoke("resume_recording", { deviceName });
+}
+
+export function stopRecording(): Promise<InterviewDetail> {
+  return invoke("stop_recording");
+}

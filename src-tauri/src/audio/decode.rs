@@ -97,7 +97,9 @@ fn decode_to_mono(path: &Path) -> Result<(Vec<f32>, u32), AppError> {
     Ok((mono_samples, source_rate))
 }
 
-fn resample(samples: &[f32], rate_in: u32, rate_out: u32) -> Result<Vec<f32>, AppError> {
+/// Shared with `capture::session`, which resamples a finished mic chunk to
+/// 16kHz the same way a decoded file is.
+pub(crate) fn resample(samples: &[f32], rate_in: u32, rate_out: u32) -> Result<Vec<f32>, AppError> {
     let input = InterleavedSlice::new(samples, 1, samples.len())
         .map_err(|err| AppError::Audio(format!("tampon audio invalide: {err}")))?;
     let mut resampler = Fft::<f32>::new_custom(

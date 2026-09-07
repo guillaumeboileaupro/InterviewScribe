@@ -18,6 +18,25 @@ pub fn create(
     get(conn, conn.last_insert_rowid())
 }
 
+/// Creates an interview for a live microphone session: `mode = 'realtime'`
+/// (vs. `create`'s `'posteriori'`) and starts directly in `'transcribing'`
+/// status since segments are produced as capture happens, not after an
+/// import step. `audio_path` points at the WAV `capture::session` is about
+/// to write incrementally.
+pub fn create_realtime(
+    conn: &Connection,
+    title: &str,
+    audio_path: &str,
+) -> Result<Interview, AppError> {
+    let now = super::now_epoch_secs();
+    conn.execute(
+        "INSERT INTO interview (title, language, mode, audio_path, status, created_at, updated_at)
+         VALUES (?1, NULL, 'realtime', ?2, 'transcribing', ?3, ?3)",
+        params![title, audio_path, now],
+    )?;
+    get(conn, conn.last_insert_rowid())
+}
+
 pub fn get(conn: &Connection, id: i64) -> Result<Interview, AppError> {
     conn.query_row(
         "SELECT id, title, language, mode, audio_path, status, error_message, created_at, updated_at
@@ -116,6 +135,15 @@ mod tests {
         let fetched = get(&conn, created.id).unwrap();
         assert_eq!(fetched.status, "error");
         assert_eq!(fetched.error_message.as_deref(), Some("decode failed"));
+    }
+
+    #[test]
+    fn create_realtime_starts_in_transcribing_status_with_realtime_mode() {
+        let conn = setup();
+        let created = create_realtime(&conn, "Session live", "/audio/live-1.wav").unwrap();
+        assert_eq!(created.mode, "realtime");
+        assert_eq!(created.status, "transcribing");
+        assert_eq!(created.language, None);
     }
 
     #[test]

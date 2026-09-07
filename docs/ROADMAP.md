@@ -45,13 +45,15 @@ Critere de sortie: une discussion de deux a cinq personnes peut etre corrigee ra
 
 ## Phase 4 - Temps reel
 
-- [ ] Capturer le microphone avec sauvegarde incrementale.
-- [ ] Ajouter VAD, fenetres glissantes et segments provisoires.
-- [ ] Stabiliser le texte sans sauts visuels excessifs.
-- [ ] Supporter pause, reprise, changement de peripherique et recuperation.
+- [x] Capturer le microphone avec sauvegarde incrementale (`cpal` + `hound`, WAV valide ecrit en continu; verifie sur peripherique audio reel, voir "Pipeline temps reel" dans `docs/ARCHITECTURE.md`).
+- [x] Ajouter VAD, fenetres glissantes et segments provisoires (VAD par seuil d'energie avec hysteresis, decoupage declenche par le silence ou un plafond de duree).
+- [x] Stabiliser le texte sans sauts visuels excessifs (chaque bloc ferme par un silence est definitif; interpretation pragmatique de "provisoire puis consolide" sans diff mot-a-mot, voir limite ci-dessous).
+- [x] Supporter pause, reprise, changement de peripherique et recuperation (pause/reprise verifiees sur materiel reel; recuperation apres interruption reutilise le pipeline a posteriori existant sur le WAV partiel deja valide).
 - [ ] Mesurer latence et consommation.
 
-Critere de sortie: une session d'une heure reste stable et recuperable, avec une latence cible mesuree et documentee.
+Critere de sortie: une session d'une heure reste stable et recuperable, avec une latence cible mesuree et documentee. Valide: 105 tests Rust (dont 17 nouveaux pour `capture::vad`/`capture::chunker`, logique pure sans materiel) et 17 tests d'interface passent; compilation complete verifiee apres l'ajout de `cpal`/`hound`; un test materiel reel (`capture::session::tests::real_microphone_capture_produces_a_valid_recoverable_wav`, `#[ignore]`) confirme sur ce poste: ouverture du peripherique par defaut, evenements de niveau reels, pause/reprise, et un WAV ecrit en continu relu avec succes par le decodeur a posteriori existant (`audio::decode::decode_to_mono_pcm16k`) - preuve concrete que la recuperation apres crash fonctionne, pas seulement en theorie.
+
+Limites connues, non couvertes par cette passe: aucune mesure de latence/consommation avec de la parole reelle n'a ete produite (necessite qu'un humain parle dans le microphone, impossible a simuler dans cet environnement de developpement) - a faire avant de considerer le critere de sortie entierement rempli. Le changement de peripherique en cours de session n'a pas ete teste sur du materiel reel (un seul microphone disponible sur ce poste). Aucune session d'une heure n'a ete testee en continu. Validation Android non tentee (voir `docs/ARCHITECTURE.md`).
 
 ## Phase 5 - Livraison bureau
 

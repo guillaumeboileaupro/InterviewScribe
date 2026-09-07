@@ -33,6 +33,8 @@ pyannote-rs = "0.3"
 # regression on OperatorDomain/ErasedOperator). Verified by real compilation
 # before pinning - see docs/ARCHITECTURE.md "Diarisation".
 ort = "=2.0.0-rc.10"
+cpal = "0.18.2"
+hound = "3.5.1"
 
 [target.'cfg(target_os = "android")'.dependencies]
 tauri-plugin-fs = "2"

@@ -379,6 +379,18 @@ footer {
   line-height: 1.7;
   margin-bottom: 24px;
 }
+.levelMeter {
+  margin-top: 8px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+}
+.levelMeterFill {
+  height: 100%;
+  background: var(--accent-text);
+  transition: width 100ms linear;
+}
 .transcript,
 .settingsPanel {
   background: var(--surface);

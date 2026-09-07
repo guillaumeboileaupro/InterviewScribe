@@ -1,4 +1,5 @@
 mod audio;
+mod capture;
 mod cleanup;
 mod db;
 mod diarization;
@@ -11,10 +12,17 @@ use std::sync::Mutex;
 
 use error::AppError;
 use serde::Serialize;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use transcription::Transcriber;
 
 struct DbState(Mutex<rusqlite::Connection>);
+struct RecordingState(Mutex<Option<ActiveRecording>>);
+
+struct ActiveRecording {
+    handle: capture::session::RecordingHandle,
+    processing_thread: std::thread::JoinHandle<()>,
+    interview_id: i64,
+}
 
 fn app_data_subdir(app: &tauri::AppHandle, name: &str) -> Result<std::path::PathBuf, AppError> {
     let base = app
@@ -175,6 +183,288 @@ fn transcribe_local(
     }
     db::interviews::update_status(&conn, interview_id, "transcribed", None)?;
     db::get_detail(&conn, interview_id)
+}
+
+#[tauri::command]
+fn list_input_devices() -> Result<Vec<String>, AppError> {
+    capture::device::list_input_devices()
+}
+
+#[tauri::command]
+async fn start_recording(
+    app: tauri::AppHandle,
+    title: String,
+    device_name: Option<String>,
+    expected_speaker_count: Option<usize>,
+) -> Result<db::models::Interview, AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        start_recording_local(&app, title, device_name, expected_speaker_count)
+    })
+    .await
+    .map_err(|err| AppError::Audio(format!("demarrage interrompu: {err}")))?
+}
+
+fn start_recording_local(
+    app: &tauri::AppHandle,
+    title: String,
+    device_name: Option<String>,
+    expected_speaker_count: Option<usize>,
+) -> Result<db::models::Interview, AppError> {
+    let recording = app.state::<RecordingState>();
+    {
+        let guard = recording
+            .0
+            .lock()
+            .map_err(|_| AppError::Audio("etat d'enregistrement indisponible".into()))?;
+        if guard.is_some() {
+            return Err(AppError::Audio(
+                "un enregistrement est deja en cours".into(),
+            ));
+        }
+    }
+
+    // Fail fast on missing/corrupt models before ever opening the microphone.
+    let transcription::model::ModelStatus::Ready {
+        path: model_path, ..
+    } = transcription::model::ensure_model(app)?;
+    let transcription::model::ModelStatus::Ready {
+        path: diarization_model_path,
+        ..
+    } = transcription::model::ensure_manifest(app, transcription::model::diarization_manifest()?)?;
+
+    let db = app.state::<DbState>();
+    let audio_dir = app_data_subdir(app, "audio")?;
+    let interview = {
+        let conn = lock_db(&db)?;
+        let interview = db::interviews::create_realtime(&conn, &title, "")?;
+        let wav_path = audio_dir.join(format!("{}.wav", interview.id));
+        db::interviews::set_audio_path(&conn, interview.id, &wav_path.to_string_lossy())?;
+        db::interviews::get(&conn, interview.id)?
+    };
+
+    let wav_path = Path::new(&interview.audio_path).to_path_buf();
+    let (event_tx, event_rx) = std::sync::mpsc::channel();
+    let handle = capture::session::start(device_name, wav_path, event_tx).inspect_err(|err| {
+        if let Ok(conn) = lock_db(&db) {
+            let _ =
+                db::interviews::update_status(&conn, interview.id, "error", Some(&err.to_string()));
+        }
+    })?;
+
+    let processing_app = app.clone();
+    let interview_id = interview.id;
+    let processing_thread = std::thread::spawn(move || {
+        run_recording_processing(
+            processing_app,
+            interview_id,
+            model_path,
+            diarization_model_path,
+            expected_speaker_count,
+            event_rx,
+        );
+    });
+
+    let mut guard = recording
+        .0
+        .lock()
+        .map_err(|_| AppError::Audio("etat d'enregistrement indisponible".into()))?;
+    *guard = Some(ActiveRecording {
+        handle,
+        processing_thread,
+        interview_id: interview.id,
+    });
+
+    Ok(interview)
+}
+
+#[tauri::command]
+fn pause_recording(recording: tauri::State<RecordingState>) -> Result<(), AppError> {
+    let guard = recording
+        .0
+        .lock()
+        .map_err(|_| AppError::Audio("etat d'enregistrement indisponible".into()))?;
+    match guard.as_ref() {
+        Some(active) => {
+            active.handle.pause();
+            Ok(())
+        }
+        None => Err(AppError::Audio("aucun enregistrement en cours".into())),
+    }
+}
+
+#[tauri::command]
+fn resume_recording(
+    recording: tauri::State<RecordingState>,
+    device_name: Option<String>,
+) -> Result<(), AppError> {
+    let guard = recording
+        .0
+        .lock()
+        .map_err(|_| AppError::Audio("etat d'enregistrement indisponible".into()))?;
+    match guard.as_ref() {
+        Some(active) => {
+            active.handle.resume(device_name);
+            Ok(())
+        }
+        None => Err(AppError::Audio("aucun enregistrement en cours".into())),
+    }
+}
+
+#[tauri::command]
+async fn stop_recording(app: tauri::AppHandle) -> Result<db::models::InterviewDetail, AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let recording = app.state::<RecordingState>();
+        let active = {
+            let mut guard = recording
+                .0
+                .lock()
+                .map_err(|_| AppError::Audio("etat d'enregistrement indisponible".into()))?;
+            guard
+                .take()
+                .ok_or_else(|| AppError::Audio("aucun enregistrement en cours".into()))?
+        };
+        active.handle.stop();
+        let _ = active.processing_thread.join();
+        let db = app.state::<DbState>();
+        let conn = lock_db(&db)?;
+        db::interviews::update_status(&conn, active.interview_id, "transcribed", None)?;
+        db::get_detail(&conn, active.interview_id)
+    })
+    .await
+    .map_err(|err| AppError::Audio(format!("arret interrompu: {err}")))?
+}
+
+/// Consumes capture events for one recording session until the capture
+/// thread closes the channel (on `stop`): transcribes and diarizes each
+/// finished chunk with a single long-lived `Clusterer` so speaker identity
+/// stays stable across the whole session, exactly like `transcribe_local`
+/// does for a whole file at once - the only difference is doing it one
+/// chunk at a time, offsetting timestamps by however much came before.
+fn run_recording_processing(
+    app: tauri::AppHandle,
+    interview_id: i64,
+    model_path: String,
+    diarization_model_path: String,
+    expected_speaker_count: Option<usize>,
+    events: std::sync::mpsc::Receiver<capture::session::SessionEvent>,
+) {
+    let transcriber =
+        match transcription::whisper_cpp::WhisperCppTranscriber::load(Path::new(&model_path)) {
+            Ok(transcriber) => transcriber,
+            Err(err) => return report_recording_error(&app, interview_id, err),
+        };
+    let mut extractor =
+        match diarization::EmbeddingExtractor::load(Path::new(&diarization_model_path)) {
+            Ok(extractor) => extractor,
+            Err(err) => return report_recording_error(&app, interview_id, err),
+        };
+    let mut clusterer = diarization::Clusterer::new(expected_speaker_count);
+    let mut speakers: Vec<db::models::Speaker> = Vec::new();
+    let mut elapsed_ms: i64 = 0;
+
+    for event in events {
+        match event {
+            capture::session::SessionEvent::LevelUpdate { rms } => {
+                let _ = app.emit("recording-level", rms);
+            }
+            capture::session::SessionEvent::Error(message) => {
+                let _ = app.emit("recording-error", message);
+            }
+            capture::session::SessionEvent::ChunkReady { pcm } => {
+                if pcm.is_empty() {
+                    continue;
+                }
+                let chunk_duration_ms =
+                    (pcm.len() as i64 * 1000) / audio::decode::WHISPER_SAMPLE_RATE as i64;
+                let result = process_recording_chunk(
+                    &app,
+                    interview_id,
+                    &transcriber,
+                    &mut extractor,
+                    &mut clusterer,
+                    &mut speakers,
+                    elapsed_ms,
+                    &pcm,
+                );
+                match result {
+                    Ok(()) => {
+                        let _ = app.emit("segments-updated", interview_id);
+                    }
+                    Err(err) => {
+                        let _ = app.emit("recording-error", err.to_string());
+                    }
+                }
+                elapsed_ms += chunk_duration_ms;
+            }
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn process_recording_chunk(
+    app: &tauri::AppHandle,
+    interview_id: i64,
+    transcriber: &transcription::whisper_cpp::WhisperCppTranscriber,
+    extractor: &mut diarization::EmbeddingExtractor,
+    clusterer: &mut diarization::Clusterer,
+    speakers: &mut Vec<db::models::Speaker>,
+    time_offset_ms: i64,
+    pcm: &[f32],
+) -> Result<(), AppError> {
+    let raw_segments = transcriber.transcribe(pcm, None)?;
+    if raw_segments.is_empty() {
+        return Ok(());
+    }
+
+    let assignments = raw_segments
+        .iter()
+        .map(|segment| {
+            let slice = diarization::slice_pcm_ms(pcm, segment.start_ms, segment.end_ms);
+            let embedding = extractor.extract(slice)?;
+            Ok(clusterer.assign(&embedding))
+        })
+        .collect::<Result<Vec<diarization::Assignment>, AppError>>()?;
+
+    let db = app.state::<DbState>();
+    let conn = lock_db(&db)?;
+
+    while speakers.len() < clusterer.speaker_count() {
+        let index = speakers.len() + 1;
+        speakers.push(db::speakers::create_numbered(&conn, interview_id, index)?);
+    }
+
+    let speaker_ids: Vec<i64> = assignments
+        .iter()
+        .map(|assignment| speakers[assignment.speaker_index].id)
+        .collect();
+    let uncertain_flags: Vec<bool> = assignments.iter().map(|a| a.uncertain).collect();
+
+    let offset_segments: Vec<transcription::RawSegment> = raw_segments
+        .into_iter()
+        .map(|segment| transcription::RawSegment {
+            start_ms: segment.start_ms + time_offset_ms,
+            end_ms: segment.end_ms + time_offset_ms,
+            text: segment.text,
+            confidence: segment.confidence,
+        })
+        .collect();
+
+    let new_segments = transcription::to_new_segments(offset_segments, &speaker_ids);
+    let inserted_ids = db::segments::insert_batch(&conn, interview_id, &new_segments)?;
+    for (segment_id, uncertain) in inserted_ids.iter().zip(&uncertain_flags) {
+        if *uncertain {
+            db::segments::mark_uncertain(&conn, *segment_id)?;
+        }
+    }
+    Ok(())
+}
+
+fn report_recording_error(app: &tauri::AppHandle, interview_id: i64, err: AppError) {
+    let db = app.state::<DbState>();
+    if let Ok(conn) = db.0.lock() {
+        let _ = db::interviews::update_status(&conn, interview_id, "error", Some(&err.to_string()));
+    }
+    let _ = app.emit("recording-error", err.to_string());
 }
 
 #[tauri::command]
@@ -355,6 +645,7 @@ pub fn run() {
             std::fs::create_dir_all(&base)?;
             let conn = db::open(&base.join("interviewscribe.sqlite3"))?;
             app.manage(DbState(Mutex::new(conn)));
+            app.manage(RecordingState(Mutex::new(None)));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -364,6 +655,11 @@ pub fn run() {
             get_interview,
             ensure_whisper_model,
             transcribe_interview,
+            list_input_devices,
+            start_recording,
+            pause_recording,
+            resume_recording,
+            stop_recording,
             rename_speaker,
             merge_speakers,
             create_speaker,
