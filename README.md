@@ -8,9 +8,11 @@ Tout tourne en local sur la machine de l'utilisateur. Aucune connexion reseau, a
 
 Version publique actuelle: [InterviewScribe v0.1.0](https://github.com/guillaumeboileaupro/InterviewScribe/releases/tag/v0.1.0).
 
-- Windows — [telecharger l'installateur `.exe`](https://github.com/guillaumeboileaupro/InterviewScribe/releases/download/v0.1.0/InterviewScribe_0.1.0_x64-setup.exe) — lancer le fichier et suivre les etapes.
-- Ubuntu/Debian — [telecharger le paquet `.deb`](https://github.com/guillaumeboileaupro/InterviewScribe/releases/download/v0.1.0/InterviewScribe_0.1.0_amd64.deb) — `sudo dpkg -i InterviewScribe_0.1.0_amd64.deb` (ou double-clic dans le gestionnaire de paquets).
-- Android — [telecharger le paquet `.apk`](https://github.com/guillaumeboileaupro/InterviewScribe/releases/download/v0.1.0/InterviewScribe_0.1.0_arm64-v8a.apk) — a ouvrir sur l'appareil une fois telecharge.
+| Plateforme | Fichier a telecharger | Installation |
+| --- | --- | --- |
+| Windows | [`InterviewScribe_0.1.0_x64-setup.exe`](https://github.com/guillaumeboileaupro/InterviewScribe/releases/download/v0.1.0/InterviewScribe_0.1.0_x64-setup.exe) | Lancer l'installateur et suivre les etapes. |
+| Linux (Debian/Ubuntu) | [`InterviewScribe_0.1.0_amd64.deb`](https://github.com/guillaumeboileaupro/InterviewScribe/releases/download/v0.1.0/InterviewScribe_0.1.0_amd64.deb) | `sudo dpkg -i InterviewScribe_0.1.0_amd64.deb` (ou double-clic dans le gestionnaire de paquets). |
+| Android | [`InterviewScribe_0.1.0_arm64-v8a.apk`](https://github.com/guillaumeboileaupro/InterviewScribe/releases/download/v0.1.0/InterviewScribe_0.1.0_arm64-v8a.apk) | Telecharger sur l'appareil, autoriser l'installation depuis une source inconnue si demande, puis ouvrir pour installer. |
 
 Aucun git, aucune compilation, aucune connexion reseau n'est necessaire pour installer ou utiliser l'application: le fichier telecharge est autosuffisant, avec les modeles deja integres a l'interieur.
 
