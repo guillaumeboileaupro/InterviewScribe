@@ -237,3 +237,19 @@ conversation, musique).
 
 Sources : [CNRS CSS — Whisper pour retranscrire des entretiens](https://www.css.cnrs.fr/whisper-pour-retranscrire-des-entretiens/),
 [LibriVox](https://librivox.org/) via [Internet Archive](https://archive.org/details/librivoxaudio) (enregistrements du domaine public utilises pour ce test, non conserves).
+
+## Livraison
+
+Les paquets Windows et Linux sont construits par `.github/workflows/release.yml` (declenche par un tag `v*` ou manuellement), jamais compiles depuis ce poste de developpement. Choix deliberement different de la strategie Android (`scripts/tauri-android.sh`, compilation croisee locale): compiler une application Tauri pour Windows depuis Linux est notoirement fragile (WebView2, ABI natif) et ne pourrait de toute facon jamais etre verifie ici, faute de machine Windows ou de Wine disponibles - ce qui violerait l'invariant "ne jamais declarer une plateforme validee sans test reel de l'artefact cible". Le workflow utilise donc un vrai runner `windows-latest` (produit l'executable et l'installateur NSIS via `--bundles nsis`) et un vrai runner `ubuntu-22.04` (produit le `.deb` via `--bundles deb`), tous deux via l'action officielle `tauri-apps/tauri-action`.
+
+Apres la construction, chaque plateforme est reellement installee et desinstallee avant d'etre consideree valide:
+- Windows: installation silencieuse (`/S`) vers un chemin force (`/D=`, doit etre le dernier argument NSIS, non guillemete), verification qu'un executable de l'application existe reellement sur disque, puis desinstallation silencieuse via l'executable de desinstallation trouve dans ce meme dossier, et verification que le dossier a disparu. Ne suppose rien sur la structure de la cle de registre de desinstallation (une premiere version de ce script le faisait et a echoue sur un vrai runner - corrige pour ne verifier que le systeme de fichiers, seule chose garantie).
+- Linux: `dpkg -i` reel, verification que le binaire installe existe et est executable (chemin lu depuis `dpkg -L`, jamais suppose), puis `dpkg -r` et verification de la desinstallation.
+
+Une somme de controle SHA-256 est publiee pour chaque artefact (fichier `.sha256` attache a la release GitHub, a cote du `.deb`/de l'installateur). La release GitHub est toujours creee en **brouillon** (`releaseDraft: true`) - jamais publique automatiquement, une decision humaine reste necessaire pour la publier.
+
+Deux bugs reels ont ete trouves et corriges en executant ce pipeline pour la premiere fois (07/09/2026), tous deux invisibles sans un vrai build cible:
+- `libasound2-dev` manquant sur les runners Ubuntu: cassait `cargo clippy`/`cargo test` depuis l'ajout de `cpal` en Phase 4 (echec `alsa-sys` : pkg-config ne trouve pas `alsa`).
+- `src-tauri/icons/icon.ico` etait un fichier corrompu (`file(1)` le rapportait comme simple `data`, pas un ICO valide) depuis sa creation - ne provoquait une erreur (`RC2175`, resource non au format 3.00) que lors d'une compilation reelle pour Windows, jamais tentee avant cette phase. Regenere depuis la source PNG via `pnpm tauri icon`.
+
+Limites non couvertes: pas de test de mise a niveau (installer une nouvelle version par-dessus une ancienne); l'aspect visuel de l'installateur (ecrans, raccourcis) n'est pas verifie par une installation silencieuse; aucune signature de code (hors perimetre, aucun secret dans le depot). L'APK Android echoue toujours a la compilation dans ce meme workflow (`ort-sys` ne compile pas pour Android - voir "Diarisation" - limite de la Phase 3/6, pas de la livraison bureau).

@@ -57,11 +57,15 @@ Limites connues, non couvertes par cette passe: aucune mesure de latence/consomm
 
 ## Phase 5 - Livraison bureau
 
-- [ ] Generer l'executable Windows.
-- [ ] Generer l'installateur NSIS Windows.
-- [ ] Generer le paquet Debian `.deb`.
-- [ ] Tester installation, mise a niveau et desinstallation.
-- [ ] Publier les sommes de controle des artefacts.
+- [x] Generer l'executable Windows (build reel sur runner `windows-latest`, jamais de compilation croisee depuis Linux - voir "Livraison" dans `docs/ARCHITECTURE.md`).
+- [x] Generer l'installateur NSIS Windows (meme build, `--bundles nsis`).
+- [x] Generer le paquet Debian `.deb` (build reel sur runner `ubuntu-22.04`).
+- [x] Tester installation et desinstallation (verifie reellement en CI: installation silencieuse, presence de l'executable confirmee sur disque, desinstallation silencieuse, suppression confirmee - sur les deux plateformes). Mise a niveau (installer une nouvelle version par-dessus une ancienne) **non testee** - limite ci-dessous.
+- [x] Publier les sommes de controle des artefacts (SHA-256, fichiers `.sha256` attaches a la release GitHub brouillon).
+
+Valide reellement le 07/09/2026 via `.github/workflows/release.yml` (existait deja mais n'avait jamais ete execute - premiere execution reelle faite dans cette phase): release GitHub brouillon `v0.1.0` (non publique) avec les 4 fichiers (`.deb`, `.exe` NSIS, 2 sommes de controle). Deux bugs reels trouves et corriges pendant cette validation, invisibles avant un vrai build cible: `libasound2-dev` manquant sur les runners Ubuntu (cassait tout le CI depuis l'ajout de `cpal` en Phase 4) et `icon.ico` corrompu (jamais un vrai fichier ICO valide, ne plantait que sur un vrai build Windows avec l'erreur `RC2175`) - regenere via `tauri icon`.
+
+Limites connues: pas de test de mise a niveau (installer par-dessus une version anterieure); l'aspect visuel de l'installateur (ecrans de l'assistant, raccourcis menu demarrer) n'est pas capture par une installation silencieuse automatisee, une verification humaine reste utile; aucune signature de code configuree (hors perimetre, aucun secret ajoute au depot); l'APK Android echoue toujours a la compilation (`ort-sys` ne compile pas pour Android - limite deja documentee en Phase 3, relevant de la Phase 6, pas de cette phase).
 
 ## Phase 6 - Android
 
