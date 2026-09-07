@@ -44,6 +44,70 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
 
+      - name: Verify install and uninstall (Debian package)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          set -euo pipefail
+          deb=$(find src-tauri/target/release/bundle/deb -name '*.deb' | head -n1)
+          pkg=$(dpkg-deb -f "$deb" Package)
+          sudo dpkg -i "$deb"
+          dpkg -l "$pkg" | grep -q '^ii' || { echo "package $pkg is not reported as installed"; exit 1; }
+          bin=$(dpkg -L "$pkg" | grep -E '^/usr/bin/' | head -n1)
+          [ -x "$bin" ] || { echo "installed binary $bin is missing or not executable"; exit 1; }
+          sudo dpkg -r "$pkg"
+          if dpkg -l "$pkg" 2>/dev/null | grep -q '^ii'; then
+            echo "$pkg is still reported as installed after removal"
+            exit 1
+          fi
+          echo "install/uninstall verified for $pkg ($bin)"
+
+      - name: Publish checksum (Debian package)
+        if: matrix.platform == 'ubuntu-22.04'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          deb=$(find src-tauri/target/release/bundle/deb -name '*.deb' | head -n1)
+          checksum_file="$(basename "$deb").sha256"
+          (cd "$(dirname "$deb")" && sha256sum "$(basename "$deb")") > "$checksum_file"
+          gh release upload "${{ github.ref_name }}" "$checksum_file" --clobber
+
+      - name: Verify install and uninstall (NSIS installer)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Filter "*.exe" | Select-Object -First 1
+          if (-not $installer) { throw "no NSIS installer found" }
+
+          Start-Process -FilePath $installer.FullName -ArgumentList "/S" -Wait
+
+          $entry = Get-ChildItem "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall" -ErrorAction SilentlyContinue |
+            Get-ItemProperty | Where-Object { $_.DisplayName -like "*InterviewScribe*" } | Select-Object -First 1
+          if (-not $entry) {
+            $entry = Get-ChildItem "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall" -ErrorAction SilentlyContinue |
+              Get-ItemProperty | Where-Object { $_.DisplayName -like "*InterviewScribe*" } | Select-Object -First 1
+          }
+          if (-not $entry) { throw "install did not register an uninstall entry" }
+          if (-not (Test-Path $entry.InstallLocation)) { throw "InstallLocation $($entry.InstallLocation) does not exist" }
+          Write-Host "Installed: $($entry.DisplayName) at $($entry.InstallLocation)"
+
+          Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$($entry.UninstallString)`" /S" -Wait
+          Start-Sleep -Seconds 3
+          if (Test-Path $entry.InstallLocation) { throw "install directory still exists after uninstall" }
+          Write-Host "Uninstall verified: $($entry.InstallLocation) removed"
+
+      - name: Publish checksum (NSIS installer)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $installer = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Filter "*.exe" | Select-Object -First 1
+          $hash = Get-FileHash -Path $installer.FullName -Algorithm SHA256
+          $checksumFile = "$($installer.Name).sha256"
+          "$($hash.Hash.ToLower())  $($installer.Name)" | Out-File -FilePath $checksumFile -Encoding ascii -NoNewline
+          gh release upload "${{ github.ref_name }}" $checksumFile --clobber
+
   android:
     runs-on: ubuntu-latest
     steps:
