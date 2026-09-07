@@ -12,6 +12,7 @@ src-tauri/gen/
 *.mp4
 *.gguf
 *.bin
+*.onnx
 *.db
 *.sqlite
 *.sqlite3
@@ -28,3 +29,4 @@ CLAUDE.md
 
 # Temporary model downloads
 *.bin.part
+*.onnx.part

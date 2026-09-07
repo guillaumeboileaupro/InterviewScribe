@@ -96,8 +96,38 @@ export function ensureWhisperModel(): Promise<ModelStatus> {
 
 export function transcribeInterview(
   interviewId: number,
+  expectedSpeakerCount?: number,
 ): Promise<InterviewDetail> {
-  return invoke("transcribe_interview", { interviewId });
+  return invoke("transcribe_interview", { interviewId, expectedSpeakerCount });
+}
+
+export function renameSpeaker(
+  speakerId: number,
+  displayName: string,
+): Promise<Speaker> {
+  return invoke("rename_speaker", { speakerId, displayName });
+}
+
+export function mergeSpeakers(
+  interviewId: number,
+  keepId: number,
+  removeId: number,
+): Promise<Speaker[]> {
+  return invoke("merge_speakers", { interviewId, keepId, removeId });
+}
+
+export function createSpeaker(
+  interviewId: number,
+  label: string,
+): Promise<Speaker> {
+  return invoke("create_speaker", { interviewId, label });
+}
+
+export function reassignSegmentSpeaker(
+  segmentId: number,
+  speakerId: number | null,
+): Promise<Segment> {
+  return invoke("reassign_segment_speaker", { segmentId, speakerId });
 }
 
 export function applySegmentCleanup(

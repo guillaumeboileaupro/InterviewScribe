@@ -61,7 +61,17 @@ Le temps reel est une transcription incrementale avec une faible latence, pas un
 
 ## Diarisation
 
-Whisper ne distingue pas a lui seul les personnes. La diarisation doit exposer une interface stable et plusieurs implementations possibles. Le premier prototype peut exploiter des embeddings vocaux locaux. Les recouvrements de voix doivent etre signales comme incertains plutot que forces vers un seul locuteur.
+Whisper ne distingue pas a lui seul les personnes. La diarisation expose une interface stable (module `diarization`, distinct de `transcription`) et reste remplacable si une meilleure implementation locale apparait. Les recouvrements de voix ou les cas ambigus sont signales comme incertains (`segment.status = 'uncertain'`) plutot que forces vers un seul locuteur.
+
+### Implementation (Phase 3, 7 septembre 2026)
+
+- Approche retenue: extraction d'une empreinte vocale par segment Whisper (pas de modele de segmentation separe - les bornes temporelles de Whisper suffisent) puis clustering. Recherche comparative menee avant implementation:
+  - `sherpa-onnx` (bindings Rust officiels du projet k2-fsa): pipeline de diarisation complet, mais binding Rust tres recent, telecharge un binaire precompile par defaut, et le support Android de ce binding specifique n'est pas documente. L'ancien crate tiers `sherpa-rs` qui aurait pu servir de repli est archive/deprecie depuis juin 2026.
+  - `pyannote-rs` (MIT): retenu pour son `EmbeddingExtractor`, utilisable independamment de son propre modele de segmentation, sans compilation C++/cmake (a la difference de `whisper-rs-sys`). Son propre clustering (`EmbeddingManager`) est en revanche trop simpliste (similarite contre un embedding fixe, jamais mis a jour) - non reutilise.
+- Clustering maison (`diarization::Clusterer`, logique pure sans dependance au modele, testee avec des embeddings fabriques a la main): centroides mobiles (moyenne ponderee, pas un point fixe), similarite cosinus, seuil de rattachement a un cluster existant, marge de confiance entre les deux meilleurs candidats pour decider du statut `uncertain`. Un indice utilisateur optionnel ("nombre de personnes attendu") plafonne le nombre de clusters crees sans jamais forcer une fusion silencieuse au-dela.
+- Modele: `wespeaker_en_voxceleb_CAM++.onnx` (embeddings de locuteur, ~28 Mo, licence CC-BY-4.0 heritee de VoxCeleb), telecharge depuis les releases GitHub de `k2-fsa/sherpa-onnx`, verifie par somme de controle SHA-256, integre au meme pipeline `pnpm models:prepare` que Whisper (zero appel reseau dans le binaire livre - voir "Modele fourni avec l'application"). Native runtime: `ort` (bindings ONNX Runtime), epingle a `2.0.0-rc.10` car la version `2.0.0-rc.13` resolue par defaut casse la compilation de `pyannote-rs` (regression de bornes `Send`/`Sync` sur `OperatorDomain`/`ErasedOperator`, verifiee par compilation reelle avant de fixer la version).
+- Separation d'un locuteur mal fusionne: geree comme une reassignation manuelle segment par segment (`reassign_segment_speaker`), pas comme un re-clustering automatique - plus simple et plus previsible pour l'utilisateur.
+- Limite connue: pas de detection audio directe du chevauchement de voix en v1 (demanderait le modele de segmentation de pyannote en plus de l'embedding) - seule la marge de confiance du clustering declenche le statut incertain. Pas encore de jeu de tests multi-locuteurs reel constitue (voir `docs/ROADMAP.md` Phase 3); a couvrir avant de considerer la diarisation pleinement validee. Support Android non valide pour cette dependance (a la difference de `whisper-rs`): a verifier lors d'un prochain passage, sans bloquer la disponibilite desktop.
 
 ## Export
 
@@ -136,9 +146,11 @@ plugin filesystem lorsque la ressource APK est compressee. Aucune connexion ni a
 de telechargement n’est necessaire au premier usage. La copie, la verification
 et l’inference se font hors du fil de l’interface.
 
-Whisper seul ne fournit pas de diarisation : cette version attribue les segments
-a `Intervenant 1`. Les performances et la memoire sur telephone restent a
-mesurer sur appareil cible; la presence du modele ne valide pas le support Android.
+Whisper seul ne fournit pas de diarisation : la separation des locuteurs est
+geree par un second modele bundle de la meme maniere (`wespeaker_en_voxceleb_CAM++.onnx`,
+voir "Diarisation" ci-dessus). Les performances et la memoire sur telephone restent a
+mesurer sur appareil cible; la presence des modeles ne valide pas le support Android
+pour la diarisation (a la difference de Whisper, deja compile et teste sur Android).
 
 Verification locale facultative avec l’echantillon public `jfk.wav` de
 whisper.cpp (ne pas ajouter l’audio ni les poids au depot) :

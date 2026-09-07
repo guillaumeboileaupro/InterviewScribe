@@ -27,6 +27,12 @@ regex = "1"
 docx-rs = "0.4"
 genpdf = "0.2"
 which = "8"
+pyannote-rs = "0.3"
+# Pinned: pyannote-rs 0.3.4 was built against this exact rc; the newer
+# 2.0.0-rc.13 that cargo resolves by default fails to compile (Send/Sync
+# regression on OperatorDomain/ErasedOperator). Verified by real compilation
+# before pinning - see docs/ARCHITECTURE.md "Diarisation".
+ort = "=2.0.0-rc.10"
 
 [target.'cfg(target_os = "android")'.dependencies]
 tauri-plugin-fs = "2"

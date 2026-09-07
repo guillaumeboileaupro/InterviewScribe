@@ -3,12 +3,16 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   applySegmentCleanup,
   checkDocExportAvailable,
+  createSpeaker,
   ensureWhisperModel,
   exportInterview,
   exportInterviewDoc,
   getInterview,
   importInterview,
   listInterviews,
+  mergeSpeakers,
+  reassignSegmentSpeaker,
+  renameSpeaker,
   saveSegmentEdit,
   transcribeInterview,
   undoSegmentEdit,
@@ -18,6 +22,7 @@ import {
   type InterviewDetail,
   type ModelStatus,
   type Segment,
+  type Speaker,
 } from "./api";
 
 const logo = new URL(
@@ -68,6 +73,7 @@ export default function App() {
   const [prepareTitle, setPrepareTitle] = useState("");
   const [prepareBusy, setPrepareBusy] = useState(false);
   const [prepareError, setPrepareError] = useState<string | null>(null);
+  const [expectedSpeakerCount, setExpectedSpeakerCount] = useState("");
 
   const [modelStatus, setModelStatus] = useState<ModelStatus | null>(null);
   const [modelError, setModelError] = useState<string | null>(null);
@@ -80,6 +86,10 @@ export default function App() {
   const [draftText, setDraftText] = useState("");
   const [interviewError, setInterviewError] = useState<string | null>(null);
   const [docAvailable, setDocAvailable] = useState(false);
+
+  const [editingSpeakerId, setEditingSpeakerId] = useState<number | null>(null);
+  const [speakerDraftName, setSpeakerDraftName] = useState("");
+  const [mergeTarget, setMergeTarget] = useState<Record<number, string>>({});
 
   const refreshInterviews = () => {
     listInterviews()
@@ -135,7 +145,13 @@ export default function App() {
         selected,
       );
       refreshInterviews();
-      const detail = await transcribeInterview(interview.id);
+      const parsedCount = Number.parseInt(expectedSpeakerCount, 10);
+      const detail = await transcribeInterview(
+        interview.id,
+        Number.isFinite(parsedCount) && parsedCount > 0
+          ? parsedCount
+          : undefined,
+      );
       setCurrentInterview(detail);
       setPage("interview");
     } catch (err) {
@@ -245,6 +261,82 @@ export default function App() {
         return next;
       });
       cancelEditingSegment();
+    } catch (err) {
+      setInterviewError(String(err));
+    }
+  };
+
+  const updateSpeakersInPlace = (speakers: Speaker[]) => {
+    setCurrentInterview((detail) =>
+      detail ? { ...detail, speakers } : detail,
+    );
+  };
+
+  const startEditingSpeaker = (speaker: Speaker) => {
+    setEditingSpeakerId(speaker.id);
+    setSpeakerDraftName(speaker.display_name ?? "");
+  };
+
+  const saveEditingSpeaker = async () => {
+    if (editingSpeakerId === null) return;
+    setInterviewError(null);
+    try {
+      const speaker = await renameSpeaker(editingSpeakerId, speakerDraftName);
+      updateSpeakersInPlace(
+        (currentInterview?.speakers ?? []).map((candidate) =>
+          candidate.id === speaker.id ? speaker : candidate,
+        ),
+      );
+      setEditingSpeakerId(null);
+      setSpeakerDraftName("");
+    } catch (err) {
+      setInterviewError(String(err));
+    }
+  };
+
+  const handleMergeSpeakers = async (keepId: number) => {
+    if (!currentInterview) return;
+    const removeId = Number.parseInt(mergeTarget[keepId] ?? "", 10);
+    if (!Number.isFinite(removeId)) return;
+    setInterviewError(null);
+    try {
+      const speakers = await mergeSpeakers(
+        currentInterview.interview.id,
+        keepId,
+        removeId,
+      );
+      updateSpeakersInPlace(speakers);
+      const detail = await getInterview(currentInterview.interview.id);
+      setCurrentInterview(detail);
+      setMergeTarget((targets) => ({ ...targets, [keepId]: "" }));
+    } catch (err) {
+      setInterviewError(String(err));
+    }
+  };
+
+  const handleAddSpeaker = async () => {
+    if (!currentInterview) return;
+    const nextIndex = currentInterview.speakers.length + 1;
+    setInterviewError(null);
+    try {
+      const speaker = await createSpeaker(
+        currentInterview.interview.id,
+        `Intervenant ${nextIndex}`,
+      );
+      updateSpeakersInPlace([...currentInterview.speakers, speaker]);
+    } catch (err) {
+      setInterviewError(String(err));
+    }
+  };
+
+  const handleReassignSegment = async (
+    segmentId: number,
+    speakerId: number | null,
+  ) => {
+    setInterviewError(null);
+    try {
+      const segment = await reassignSegmentSpeaker(segmentId, speakerId);
+      updateSegmentInPlace(segment);
     } catch (err) {
       setInterviewError(String(err));
     }
@@ -536,9 +628,6 @@ export default function App() {
                   <p className="muted">Aucun segment pour le moment.</p>
                 ) : (
                   currentInterview.segments.map((segment) => {
-                    const speaker = currentInterview.speakers.find(
-                      (candidate) => candidate.id === segment.speaker_id,
-                    );
                     const isEdited = segment.current_text !== segment.raw_text;
                     const diffParts = cleanupDiffs[segment.id];
                     return (
@@ -547,11 +636,34 @@ export default function App() {
                           {timestamps && (
                             <time>{formatTimestamp(segment.start_ms)}</time>
                           )}
-                          <span className="speaker">
-                            {speaker?.display_name ??
-                              speaker?.label ??
-                              "Intervenant"}
-                          </span>
+                          <select
+                            className="speaker"
+                            aria-label="Locuteur du segment"
+                            value={segment.speaker_id ?? ""}
+                            onChange={(event) =>
+                              handleReassignSegment(
+                                segment.id,
+                                event.target.value
+                                  ? Number(event.target.value)
+                                  : null,
+                              )
+                            }
+                          >
+                            <option value="">Sans locuteur</option>
+                            {currentInterview.speakers.map((candidate) => (
+                              <option key={candidate.id} value={candidate.id}>
+                                {candidate.display_name ?? candidate.label}
+                              </option>
+                            ))}
+                          </select>
+                          {segment.status === "uncertain" && (
+                            <span
+                              className="muted"
+                              title="Confiance faible sur l'attribution du locuteur"
+                            >
+                              incertain
+                            </span>
+                          )}
                         </div>
                         {editingSegmentId === segment.id ? (
                           <>
@@ -630,6 +742,85 @@ export default function App() {
                     );
                   })
                 )}
+              </section>
+              <section className="settingsPanel">
+                <h2>Locuteurs</h2>
+                {currentInterview.speakers.map((speaker) => (
+                  <div className="buttonRow" key={speaker.id}>
+                    <span
+                      className="speakerDot"
+                      style={{ backgroundColor: speaker.color }}
+                      aria-hidden="true"
+                    />
+                    {editingSpeakerId === speaker.id ? (
+                      <>
+                        <input
+                          type="text"
+                          value={speakerDraftName}
+                          onChange={(event) =>
+                            setSpeakerDraftName(event.target.value)
+                          }
+                          placeholder={speaker.label}
+                        />
+                        <button
+                          className="primary"
+                          onClick={saveEditingSpeaker}
+                        >
+                          Enregistrer
+                        </button>
+                        <button
+                          className="secondary"
+                          onClick={() => setEditingSpeakerId(null)}
+                        >
+                          Annuler
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span>{speaker.display_name ?? speaker.label}</span>
+                        <button
+                          className="textButton"
+                          onClick={() => startEditingSpeaker(speaker)}
+                        >
+                          Renommer
+                        </button>
+                        {currentInterview.speakers.length > 1 && (
+                          <>
+                            <select
+                              aria-label={`Fusionner ${speaker.display_name ?? speaker.label} avec`}
+                              value={mergeTarget[speaker.id] ?? ""}
+                              onChange={(event) =>
+                                setMergeTarget((targets) => ({
+                                  ...targets,
+                                  [speaker.id]: event.target.value,
+                                }))
+                              }
+                            >
+                              <option value="">Fusionner avec…</option>
+                              {currentInterview.speakers
+                                .filter((other) => other.id !== speaker.id)
+                                .map((other) => (
+                                  <option key={other.id} value={other.id}>
+                                    {other.display_name ?? other.label}
+                                  </option>
+                                ))}
+                            </select>
+                            <button
+                              className="textButton"
+                              disabled={!mergeTarget[speaker.id]}
+                              onClick={() => handleMergeSpeakers(speaker.id)}
+                            >
+                              Fusionner
+                            </button>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </div>
+                ))}
+                <button className="secondary" onClick={handleAddSpeaker}>
+                  + Ajouter un locuteur
+                </button>
               </section>
               <section className="settingsPanel">
                 <h2>Export</h2>
@@ -733,6 +924,18 @@ export default function App() {
                           setPrepareTitle(event.target.value)
                         }
                         placeholder="Sans titre reprend le nom du fichier"
+                      />
+                    </label>
+                    <label className="field">
+                      Nombre de personnes (optionnel)
+                      <input
+                        type="number"
+                        min={1}
+                        value={expectedSpeakerCount}
+                        onChange={(event) =>
+                          setExpectedSpeakerCount(event.target.value)
+                        }
+                        placeholder="Estimation automatique si vide"
                       />
                     </label>
 

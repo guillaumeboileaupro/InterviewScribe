@@ -26,6 +26,16 @@ pub fn manifest() -> Result<ModelManifest, AppError> {
         .map_err(|err| AppError::Model(format!("description du modele invalide: {err}")))
 }
 
+/// The speaker-embedding model used by `diarization` (see docs/ARCHITECTURE.md
+/// "Diarisation"). Same bundling contract as the Whisper manifest above: built
+/// into the binary, verified by checksum, never fetched at runtime.
+pub fn diarization_manifest() -> Result<ModelManifest, AppError> {
+    serde_json::from_str(include_str!(
+        "../../resources/models/diarization-manifest.json"
+    ))
+    .map_err(|err| AppError::Model(format!("description du modele invalide: {err}")))
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "state")]
 pub enum ModelStatus {
@@ -39,7 +49,16 @@ pub enum ModelStatus {
 /// Uses only resources shipped with the application. Never accesses the network.
 /// Android assets are streamed into private storage because Whisper needs a disk path.
 pub fn ensure_model(app: &tauri::AppHandle) -> Result<ModelStatus, AppError> {
-    let model = manifest()?;
+    ensure_manifest(app, manifest()?)
+}
+
+/// Same guarantee as `ensure_model`, generalized to any bundled model
+/// manifest so `diarization` can reuse the exact verify/install logic
+/// instead of duplicating the Android asset-streaming path.
+pub fn ensure_manifest(
+    app: &tauri::AppHandle,
+    model: ModelManifest,
+) -> Result<ModelStatus, AppError> {
     let resource = app
         .path()
         .resolve(

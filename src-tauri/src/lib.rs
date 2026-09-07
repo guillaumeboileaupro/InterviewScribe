@@ -1,6 +1,7 @@
 mod audio;
 mod cleanup;
 mod db;
+mod diarization;
 mod error;
 mod export;
 mod transcription;
@@ -79,10 +80,11 @@ async fn ensure_whisper_model(
 async fn transcribe_interview(
     app: tauri::AppHandle,
     interview_id: i64,
+    expected_speaker_count: Option<usize>,
 ) -> Result<db::models::InterviewDetail, AppError> {
     tauri::async_runtime::spawn_blocking(move || {
         let db = app.state::<DbState>();
-        transcribe_local(&app, &db, interview_id)
+        transcribe_local(&app, &db, interview_id, expected_speaker_count)
     })
     .await
     .map_err(|err| AppError::Transcription(format!("traitement interrompu: {err}")))?
@@ -92,6 +94,7 @@ fn transcribe_local(
     app: &tauri::AppHandle,
     db: &DbState,
     interview_id: i64,
+    expected_speaker_count: Option<usize>,
 ) -> Result<db::models::InterviewDetail, AppError> {
     let mark_error = |err: AppError| -> AppError {
         if let Ok(conn) = db.0.lock() {
@@ -132,12 +135,87 @@ fn transcribe_local(
         .transcribe(&pcm, interview.language.as_deref())
         .map_err(mark_error)?;
 
+    let transcription::model::ModelStatus::Ready {
+        path: diarization_model_path,
+        ..
+    } = transcription::model::ensure_manifest(app, transcription::model::diarization_manifest()?)
+        .map_err(mark_error)?;
+    let mut extractor = diarization::EmbeddingExtractor::load(Path::new(&diarization_model_path))
+        .map_err(mark_error)?;
+    let mut clusterer = diarization::Clusterer::new(expected_speaker_count);
+    let assignments = raw_segments
+        .iter()
+        .map(|segment| {
+            let slice = diarization::slice_pcm_ms(&pcm, segment.start_ms, segment.end_ms);
+            let embedding = extractor.extract(slice)?;
+            Ok(clusterer.assign(&embedding))
+        })
+        .collect::<Result<Vec<diarization::Assignment>, AppError>>()
+        .map_err(mark_error)?;
+
     let conn = lock_db(db)?;
-    let speaker = db::speakers::create_default(&conn, interview_id)?;
-    let new_segments = transcription::to_new_segments(raw_segments, speaker.id);
-    db::segments::insert_batch(&conn, interview_id, &new_segments)?;
+    let speakers: Vec<db::models::Speaker> = (1..=clusterer.speaker_count())
+        .map(|index| db::speakers::create_numbered(&conn, interview_id, index))
+        .collect::<Result<_, _>>()?;
+    let speaker_ids: Vec<i64> = assignments
+        .iter()
+        .map(|assignment| speakers[assignment.speaker_index].id)
+        .collect();
+    let uncertain_flags: Vec<bool> = assignments.iter().map(|a| a.uncertain).collect();
+
+    let new_segments = transcription::to_new_segments(raw_segments, &speaker_ids);
+    let inserted_ids = db::segments::insert_batch(&conn, interview_id, &new_segments)?;
+    // insert_batch always writes 'raw'; segments the clusterer flagged as an
+    // uncertain speaker match get promoted to 'uncertain' rather than forcing
+    // silent confidence the diarization step doesn't actually have.
+    for (segment_id, uncertain) in inserted_ids.iter().zip(&uncertain_flags) {
+        if *uncertain {
+            db::segments::mark_uncertain(&conn, *segment_id)?;
+        }
+    }
     db::interviews::update_status(&conn, interview_id, "transcribed", None)?;
     db::get_detail(&conn, interview_id)
+}
+
+#[tauri::command]
+fn rename_speaker(
+    db: tauri::State<DbState>,
+    speaker_id: i64,
+    display_name: String,
+) -> Result<db::models::Speaker, AppError> {
+    let conn = lock_db(&db)?;
+    db::speakers::rename(&conn, speaker_id, &display_name)
+}
+
+#[tauri::command]
+fn merge_speakers(
+    db: tauri::State<DbState>,
+    interview_id: i64,
+    keep_id: i64,
+    remove_id: i64,
+) -> Result<Vec<db::models::Speaker>, AppError> {
+    let conn = lock_db(&db)?;
+    db::speakers::merge(&conn, interview_id, keep_id, remove_id)
+}
+
+#[tauri::command]
+fn create_speaker(
+    db: tauri::State<DbState>,
+    interview_id: i64,
+    label: String,
+) -> Result<db::models::Speaker, AppError> {
+    let conn = lock_db(&db)?;
+    db::speakers::create_speaker(&conn, interview_id, &label)
+}
+
+#[tauri::command]
+fn reassign_segment_speaker(
+    db: tauri::State<DbState>,
+    segment_id: i64,
+    speaker_id: Option<i64>,
+) -> Result<db::models::Segment, AppError> {
+    let conn = lock_db(&db)?;
+    db::segments::reassign_speaker(&conn, segment_id, speaker_id)
 }
 
 #[derive(Serialize)]
@@ -286,6 +364,10 @@ pub fn run() {
             get_interview,
             ensure_whisper_model,
             transcribe_interview,
+            rename_speaker,
+            merge_speakers,
+            create_speaker,
+            reassign_segment_speaker,
             apply_segment_cleanup,
             save_segment_edit,
             undo_segment_edit,

@@ -307,6 +307,13 @@ p {
   color: var(--muted);
   margin-left: 12px;
 }
+.speakerDot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
 .preview p {
   color: var(--text);
   margin: 8px 0 16px;

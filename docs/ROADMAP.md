@@ -35,13 +35,13 @@ Critere de sortie: aucune modification automatique ne peut detruire le texte sou
 
 ## Phase 3 - Multi-locuteurs
 
-- [ ] Integrer la diarisation locale.
-- [ ] Estimer le nombre de locuteurs avec possibilite de correction.
-- [ ] Renommer, fusionner et separer les locuteurs.
-- [ ] Gerer explicitement les chevauchements et incertitudes.
+- [x] Integrer la diarisation locale (extraction d'empreintes vocales + clustering maison a centroides mobiles, voir "Diarisation" dans `docs/ARCHITECTURE.md`).
+- [x] Estimer le nombre de locuteurs avec possibilite de correction (clustering automatique, indice optionnel "nombre de personnes" au lancement, ajout manuel d'un locuteur oublie).
+- [x] Renommer, fusionner et separer les locuteurs (separation geree comme une reassignation manuelle segment par segment, pas un re-clustering automatique).
+- [x] Gerer explicitement les chevauchements et incertitudes (statut `uncertain` quand la marge de confiance entre les deux meilleurs locuteurs candidats est trop faible; reste a affiner: pas de detection audio du chevauchement lui-meme en v1, voir limite ci-dessous).
 - [ ] Constituer un jeu de tests multi-locuteurs non prive.
 
-Critere de sortie: une discussion de deux a cinq personnes peut etre corrigee rapidement et exportee avec des etiquettes stables.
+Critere de sortie: une discussion de deux a cinq personnes peut etre corrigee rapidement et exportee avec des etiquettes stables. Valide: 92 tests Rust (dont 10 sur le clustering, avec des embeddings fabriques a la main, aucun modele reel requis) et 16 tests d'interface passent; compilation complete (bibliotheque et binaire) verifiee apres l'ajout de `pyannote-rs`/`ort`; nouveau modele d'empreinte vocale (WeSpeaker CAM++, ~28 Mo) telecharge, verifie par somme de controle et integre au meme pipeline `pnpm models:prepare` que Whisper. Limite connue non encore couverte: pas de validation de bout en bout sur un enregistrement multi-locuteurs reel (le jeu de tests dedie reste a constituer), et la detection de chevauchement de voix reste indirecte (marge de confiance du clustering) plutot qu'une detection audio dediee.
 
 ## Phase 4 - Temps reel
 

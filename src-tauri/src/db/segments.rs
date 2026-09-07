@@ -11,12 +11,17 @@ pub struct NewSegment {
     pub confidence: Option<f64>,
 }
 
+/// Inserts every segment and returns their new ids, in the same order as
+/// `segments` - lets a caller (e.g. diarization) address a specific inserted
+/// row afterwards (see `mark_uncertain`) without depending on `start_ms`
+/// ordering or ties.
 pub fn insert_batch(
     conn: &Connection,
     interview_id: i64,
     segments: &[NewSegment],
-) -> Result<(), AppError> {
+) -> Result<Vec<i64>, AppError> {
     let tx = conn.unchecked_transaction()?;
+    let mut ids = Vec::with_capacity(segments.len());
     {
         let mut stmt = tx.prepare(
             "INSERT INTO segment (interview_id, speaker_id, start_ms, end_ms, raw_text, confidence, status)
@@ -31,9 +36,21 @@ pub fn insert_batch(
                 seg.raw_text,
                 seg.confidence,
             ])?;
+            ids.push(tx.last_insert_rowid());
         }
     }
     tx.commit()?;
+    Ok(ids)
+}
+
+/// Flags a segment's speaker attribution as uncertain (diarization's best
+/// guess had too little margin over the runner-up) rather than forcing
+/// silent confidence - see docs/ARCHITECTURE.md "Diarisation".
+pub fn mark_uncertain(conn: &Connection, segment_id: i64) -> Result<(), AppError> {
+    conn.execute(
+        "UPDATE segment SET status = 'uncertain' WHERE id = ?1",
+        params![segment_id],
+    )?;
     Ok(())
 }
 
@@ -68,6 +85,25 @@ pub fn get(conn: &Connection, segment_id: i64) -> Result<Segment, AppError> {
         rusqlite::Error::QueryReturnedNoRows => AppError::NotFound(format!("segment {segment_id}")),
         other => AppError::Db(other),
     })
+}
+
+/// Moves a segment to a different speaker (or clears it with `None`). This is
+/// the manual-correction path for diarization mistakes - "separating" a
+/// wrongly-merged speaker means moving their segments here, one at a time,
+/// rather than re-running automatic clustering.
+pub fn reassign_speaker(
+    conn: &Connection,
+    segment_id: i64,
+    speaker_id: Option<i64>,
+) -> Result<Segment, AppError> {
+    let updated = conn.execute(
+        "UPDATE segment SET speaker_id = ?1 WHERE id = ?2",
+        params![speaker_id, segment_id],
+    )?;
+    if updated == 0 {
+        return Err(AppError::NotFound(format!("segment {segment_id}")));
+    }
+    get(conn, segment_id)
 }
 
 fn row_to_segment(row: &Row) -> rusqlite::Result<Segment> {
@@ -173,6 +209,38 @@ mod tests {
     fn get_missing_segment_is_not_found() {
         let (conn, _interview_id, _speaker_id) = setup();
         let err = get(&conn, 999).unwrap_err();
+        assert!(matches!(err, AppError::NotFound(_)));
+    }
+
+    #[test]
+    fn reassign_speaker_moves_a_segment_to_another_speaker() {
+        let (conn, interview_id, speaker_id) = setup();
+        let other = speakers::create_numbered(&conn, interview_id, 2).unwrap();
+        insert_batch(
+            &conn,
+            interview_id,
+            &[NewSegment {
+                speaker_id: Some(speaker_id),
+                start_ms: 0,
+                end_ms: 1000,
+                raw_text: "Bonjour".into(),
+                confidence: None,
+            }],
+        )
+        .unwrap();
+        let segment_id = list_for_interview(&conn, interview_id).unwrap()[0].id;
+
+        let updated = reassign_speaker(&conn, segment_id, Some(other.id)).unwrap();
+        assert_eq!(updated.speaker_id, Some(other.id));
+
+        let cleared = reassign_speaker(&conn, segment_id, None).unwrap();
+        assert_eq!(cleared.speaker_id, None);
+    }
+
+    #[test]
+    fn reassign_speaker_missing_segment_is_not_found() {
+        let (conn, _interview_id, speaker_id) = setup();
+        let err = reassign_speaker(&conn, 999, Some(speaker_id)).unwrap_err();
         assert!(matches!(err, AppError::NotFound(_)));
     }
 

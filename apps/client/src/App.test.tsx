@@ -458,6 +458,334 @@ describe("App", () => {
     );
     expect(await screen.findByText("Salut !")).toBeInTheDocument();
   });
+
+  it("renames a speaker without inventing one automatically", async () => {
+    mockIPC((cmd) => {
+      switch (cmd) {
+        case "list_interviews":
+          return [
+            {
+              id: 7,
+              title: "entretien.wav",
+              language: null,
+              mode: "posteriori",
+              audio_path: "/audio/7.wav",
+              status: "transcribed",
+              error_message: null,
+              created_at: "0",
+              updated_at: "0",
+            },
+          ];
+        case "get_interview":
+          return {
+            interview: {
+              id: 7,
+              title: "entretien.wav",
+              language: null,
+              mode: "posteriori",
+              audio_path: "/audio/7.wav",
+              status: "transcribed",
+              error_message: null,
+              created_at: "0",
+              updated_at: "0",
+            },
+            speakers: [
+              {
+                id: 1,
+                interview_id: 7,
+                label: "Intervenant 1",
+                color: "#3156a3",
+                display_name: null,
+              },
+            ],
+            segments: [],
+          };
+        case "rename_speaker":
+          return {
+            id: 1,
+            interview_id: 7,
+            label: "Intervenant 1",
+            color: "#3156a3",
+            display_name: "Marie",
+          };
+        default:
+          throw new Error(`unexpected command: ${cmd}`);
+      }
+    });
+
+    render(<App />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /entretien.wav/ }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Renommer" }));
+    fireEvent.change(screen.getByPlaceholderText("Intervenant 1"), {
+      target: { value: "Marie" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
+
+    expect(await screen.findByText("Marie")).toBeInTheDocument();
+    expect(screen.queryByText("Intervenant 1")).not.toBeInTheDocument();
+  });
+
+  it("merges a speaker into another and refreshes the segment list", async () => {
+    let merged = false;
+    mockIPC((cmd) => {
+      switch (cmd) {
+        case "list_interviews":
+          return [
+            {
+              id: 7,
+              title: "entretien.wav",
+              language: null,
+              mode: "posteriori",
+              audio_path: "/audio/7.wav",
+              status: "transcribed",
+              error_message: null,
+              created_at: "0",
+              updated_at: "0",
+            },
+          ];
+        case "get_interview":
+          return {
+            interview: {
+              id: 7,
+              title: "entretien.wav",
+              language: null,
+              mode: "posteriori",
+              audio_path: "/audio/7.wav",
+              status: "transcribed",
+              error_message: null,
+              created_at: "0",
+              updated_at: "0",
+            },
+            speakers: merged
+              ? [
+                  {
+                    id: 1,
+                    interview_id: 7,
+                    label: "Intervenant 1",
+                    color: "#3156a3",
+                    display_name: null,
+                  },
+                ]
+              : [
+                  {
+                    id: 1,
+                    interview_id: 7,
+                    label: "Intervenant 1",
+                    color: "#3156a3",
+                    display_name: null,
+                  },
+                  {
+                    id: 2,
+                    interview_id: 7,
+                    label: "Intervenant 2",
+                    color: "#a33131",
+                    display_name: null,
+                  },
+                ],
+            segments: [
+              {
+                id: 1,
+                interview_id: 7,
+                speaker_id: 1,
+                start_ms: 0,
+                end_ms: 1000,
+                raw_text: "Bonjour.",
+                current_text: "Bonjour.",
+                confidence: 0.9,
+                status: "raw",
+              },
+            ],
+          };
+        case "merge_speakers":
+          merged = true;
+          return [
+            {
+              id: 1,
+              interview_id: 7,
+              label: "Intervenant 1",
+              color: "#3156a3",
+              display_name: null,
+            },
+          ];
+        default:
+          throw new Error(`unexpected command: ${cmd}`);
+      }
+    });
+
+    render(<App />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /entretien.wav/ }),
+    );
+    await screen.findByText("Intervenant 2");
+
+    fireEvent.change(
+      screen.getByRole("combobox", { name: /Fusionner Intervenant 1 avec/ }),
+      { target: { value: "2" } },
+    );
+    fireEvent.click(screen.getAllByRole("button", { name: "Fusionner" })[0]);
+
+    await waitFor(() =>
+      expect(screen.queryByText("Intervenant 2")).not.toBeInTheDocument(),
+    );
+  });
+
+  it("reassigns a segment to a different speaker", async () => {
+    mockIPC((cmd) => {
+      switch (cmd) {
+        case "list_interviews":
+          return [
+            {
+              id: 7,
+              title: "entretien.wav",
+              language: null,
+              mode: "posteriori",
+              audio_path: "/audio/7.wav",
+              status: "transcribed",
+              error_message: null,
+              created_at: "0",
+              updated_at: "0",
+            },
+          ];
+        case "get_interview":
+          return {
+            interview: {
+              id: 7,
+              title: "entretien.wav",
+              language: null,
+              mode: "posteriori",
+              audio_path: "/audio/7.wav",
+              status: "transcribed",
+              error_message: null,
+              created_at: "0",
+              updated_at: "0",
+            },
+            speakers: [
+              {
+                id: 1,
+                interview_id: 7,
+                label: "Intervenant 1",
+                color: "#3156a3",
+                display_name: null,
+              },
+              {
+                id: 2,
+                interview_id: 7,
+                label: "Intervenant 2",
+                color: "#a33131",
+                display_name: null,
+              },
+            ],
+            segments: [
+              {
+                id: 1,
+                interview_id: 7,
+                speaker_id: 1,
+                start_ms: 0,
+                end_ms: 1000,
+                raw_text: "Bonjour.",
+                current_text: "Bonjour.",
+                confidence: 0.9,
+                status: "raw",
+              },
+            ],
+          };
+        case "reassign_segment_speaker":
+          return {
+            id: 1,
+            interview_id: 7,
+            speaker_id: 2,
+            start_ms: 0,
+            end_ms: 1000,
+            raw_text: "Bonjour.",
+            current_text: "Bonjour.",
+            confidence: 0.9,
+            status: "raw",
+          };
+        default:
+          throw new Error(`unexpected command: ${cmd}`);
+      }
+    });
+
+    render(<App />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /entretien.wav/ }),
+    );
+    const segmentSpeaker = await screen.findByRole("combobox", {
+      name: "Locuteur du segment",
+    });
+    fireEvent.change(segmentSpeaker, { target: { value: "2" } });
+
+    await waitFor(() =>
+      expect((segmentSpeaker as HTMLSelectElement).value).toBe("2"),
+    );
+  });
+
+  it("flags a low-confidence speaker attribution as uncertain", async () => {
+    mockIPC((cmd) => {
+      switch (cmd) {
+        case "list_interviews":
+          return [
+            {
+              id: 7,
+              title: "entretien.wav",
+              language: null,
+              mode: "posteriori",
+              audio_path: "/audio/7.wav",
+              status: "transcribed",
+              error_message: null,
+              created_at: "0",
+              updated_at: "0",
+            },
+          ];
+        case "get_interview":
+          return {
+            interview: {
+              id: 7,
+              title: "entretien.wav",
+              language: null,
+              mode: "posteriori",
+              audio_path: "/audio/7.wav",
+              status: "transcribed",
+              error_message: null,
+              created_at: "0",
+              updated_at: "0",
+            },
+            speakers: [
+              {
+                id: 1,
+                interview_id: 7,
+                label: "Intervenant 1",
+                color: "#3156a3",
+                display_name: null,
+              },
+            ],
+            segments: [
+              {
+                id: 1,
+                interview_id: 7,
+                speaker_id: 1,
+                start_ms: 0,
+                end_ms: 1000,
+                raw_text: "Bonjour.",
+                current_text: "Bonjour.",
+                confidence: 0.9,
+                status: "uncertain",
+              },
+            ],
+          };
+        default:
+          throw new Error(`unexpected command: ${cmd}`);
+      }
+    });
+
+    render(<App />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /entretien.wav/ }),
+    );
+    expect(await screen.findByText("incertain")).toBeInTheDocument();
+  });
 });
 
 describe("model prerequisites", () => {

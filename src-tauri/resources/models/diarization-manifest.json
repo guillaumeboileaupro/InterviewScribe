@@ -1,0 +1,7 @@
+{
+  "name": "WeSpeaker VoxCeleb CAM++ (embeddings de locuteur)",
+  "file": "wespeaker_en_voxceleb_CAM++.onnx",
+  "size_bytes": 29292684,
+  "sha256": "c46fad10b5f81e1aa4a60c162714208577093655076c5450f8c469e522ec54ef",
+  "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_CAM%2B%2B.onnx"
+}
