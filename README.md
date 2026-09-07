@@ -1,92 +1,58 @@
 # InterviewScribe
 
-InterviewScribe est une application locale de transcription d'entretiens, en developpement pour Windows, Linux et Android.
+InterviewScribe est une application locale de transcription d'entretiens pour Windows, Linux et Android. Elle transforme une conversation en texte (enregistrement microphone ou fichier importe), distingue les intervenants, et produit une transcription brute fidele ainsi qu'une version nettoyee (hesitations retirees, sens jamais modifie).
 
-Elle vise a transformer une conversation en texte en temps reel ou depuis un enregistrement, distinguer les intervenants et produire deux sorties complementaires:
+Tout tourne en local sur la machine de l'utilisateur. Aucune connexion reseau, aucun compte, aucun envoi d'audio ou de transcription vers un service distant.
 
-- une transcription brute, fidele et auditable;
-- une transcription nettoyee, sans hesitations inutiles, sans modifier le sens.
+## Telechargement et installation
 
-## Objectifs du produit
+Les paquets se trouvent sur la page [Releases](https://github.com/guillaumeboileaupro/InterviewScribe/releases/latest). Chaque version fournit, avec les modeles deja integres a l'interieur:
 
-- Transcrire en francais et dans d'autres langues avec Whisper.
-- Detecter automatiquement le nombre d'intervenants.
-- Associer chaque prise de parole a un intervenant modifiable.
-- Activer ou masquer les horodatages.
-- Enregistrer une conversation ou importer un fichier audio/video dans tout format courant.
-- Exporter en TXT, Markdown, JSON, SRT, VTT, DOCX, DOC et PDF, au choix de l'utilisateur.
-- Fonctionner localement par defaut afin de proteger les entretiens.
-- Livrer une application Windows, un installateur Windows, un paquet Linux et une application Android.
+| Plateforme | Fichier a telecharger | Installation |
+| --- | --- | --- |
+| Windows | `InterviewScribe_x.y.z_x64-setup.exe` | Lancer l'installateur et suivre les etapes. |
+| Linux (Debian/Ubuntu) | `InterviewScribe_x.y.z_amd64.deb` | `sudo dpkg -i InterviewScribe_x.y.z_amd64.deb` (ou double-clic dans le gestionnaire de paquets). |
+| Android | `InterviewScribe_x.y.z_arm64-v8a.apk` | Telecharger l'APK sur l'appareil, autoriser l'installation depuis une source inconnue si demande, puis l'ouvrir pour installer. |
 
-## Etat du projet
+Aucun git, aucune compilation, aucune connexion reseau n'est necessaire pour installer ou utiliser l'application: le fichier telecharge est autosuffisant.
 
-Sur bureau (Windows, Linux): import audio ou capture microphone en direct, transcription Whisper locale, diarisation locale multi-locuteurs (renommage/fusion/reassignation), nettoyage reversible des hesitations, export TXT/Markdown/JSON/SRT/VTT/DOCX/PDF/DOC, et une chaine de publication reelle (executable et installateur NSIS Windows, paquet Debian) verifiee par installation et desinstallation automatisees sur des runners reels.
+Chaque fichier est accompagne d'une somme de controle `.sha256`. Pour la verifier avant installation:
 
-Sur Android: une APK signee (arm64-v8a) est produite et sa signature verifiee automatiquement a chaque publication, avec l'import de fichier via le selecteur systeme et la transcription Whisper locale corriges pour cette plateforme. La diarisation y est desactivee (limite technique documentee dans [Architecture](docs/ARCHITECTURE.md)) et **aucun test sur appareil ou emulateur physique n'a ete effectue** (uniquement verifie par compilation et signature reelles en CI) - a faire avant de considerer Android pleinement valide.
+```bash
+sha256sum -c InterviewScribe_x.y.z_amd64.deb.sha256
+```
 
-Consultez:
+(remplacer par le nom du fichier correspondant a votre plateforme).
+
+## Utilisation
+
+1. Ouvrir InterviewScribe.
+2. Creer un entretien: importer un fichier audio/video existant, ou lancer un enregistrement microphone (Windows/Linux).
+3. Attendre la transcription locale (Whisper). Sur bureau, les intervenants sont automatiquement detectes et separes; ils restent renommables, fusionnables et reassignables a tout moment.
+4. Relire et corriger si besoin: le texte brut original reste toujours consultable et n'est jamais modifie; les corrections sont des couches separees et annulables.
+5. Exporter au format souhaite: TXT, Markdown, JSON, SRT, VTT, DOCX, PDF ou DOC.
+
+## Confidentialite
+
+L'audio, les empreintes vocales et les transcriptions sont des donnees sensibles. Rien n'est envoye sur le reseau par defaut, et aucune fonctionnalite distante ne sera ajoutee sans etre facultative, explicite et documentee.
+
+## Documentation
 
 - [Vision produit](docs/PRODUCT.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Planification](docs/ROADMAP.md)
 - [Principes UI/UX](docs/UI_UX.md)
 
-## Architecture cible
+## Developpement (contributeurs)
 
-- Tauri 2 et Rust pour le coeur multiplateforme.
-- React et TypeScript pour l'interface.
-- Whisper/whisper.cpp pour la transcription locale.
-- Un module de diarisation distinct pour les locuteurs.
-- SQLite pour les projets, segments, intervenants et reglages.
+Cette section ne concerne pas l'utilisateur final, seulement la fabrication du paquet.
 
-## Formats de livraison
-
-| Plateforme | Format |
-| --- | --- |
-| Windows | executable `.exe` et installateur NSIS `.exe` |
-| Ubuntu/Debian | paquet `.deb` |
-| Android | paquet `.apk` |
-
-Les workflows GitHub Actions preparent les artefacts de version avec les modeles integres. Pour Windows et Linux, chaque publication installe et desinstalle reellement l'artefact produit (pas seulement une construction reussie) avant de le publier. L'APK Android est produite et signee, mais sa validation sur appareil physique reste a faire.
-
-## Developpement
-
-Prerequis cibles: Node.js 22, pnpm, Rust stable et les dependances Tauri 2. Android necessite egalement Android Studio, le SDK et le NDK.
+Prerequis: Node.js 22, pnpm, Rust stable et les dependances Tauri 2 (Android necessite en plus Android Studio, le SDK et le NDK).
 
 ```bash
 pnpm install
-pnpm models:prepare
+pnpm models:prepare   # telecharge les modeles (connexion necessaire uniquement ici)
 pnpm tauri dev
 ```
 
-La transcription a posteriori est branchee au moteur natif; utiliser l’application Tauri pour acceder a l’import et aux fichiers locaux.
-
-## Confidentialite
-
-L'audio, les empreintes vocales et les transcriptions sont des donnees sensibles. Aucun envoi reseau ne doit etre ajoute par defaut. Toute fonctionnalite distante devra etre facultative, explicite et documentee.
-
-## Modeles integres et construction hors ligne
-
-**Ce que recoit l'utilisateur final: uniquement un binaire installable** (l'executable
-Windows, le paquet `.deb` ou l'APK), avec les modeles deja integres a l'interieur.
-Aucun git, aucune compilation, aucune connexion reseau n'est necessaire pour
-installer ou utiliser l'application - tout tourne en local sur sa machine, jamais
-un service distant. Les paquets incluent Whisper Large v3 Turbo Q5_0 (environ
-575 Mo) pour la transcription, et sur bureau uniquement, un second modele
-d'empreintes vocales (WeSpeaker CAM++, environ 28 Mo) pour la diarisation -
-chacun avec sa licence.
-
-Ce qui suit ne concerne que la fabrication du paquet par le developpeur, jamais
-l'utilisateur final: pour construire un paquet, recuperer d'abord les modeles
-avec `pnpm models:prepare` (connexion necessaire uniquement sur la machine de
-construction, jamais sur celle de l'utilisateur). `pnpm models:verify` controle
-leur taille et leur SHA-256; cette verification est automatique avant le build
-natif. Ne jamais ajouter ces fichiers a Git. Les workflows de release preparent
-les modeles avant de construire les installateurs et l'APK.
-
-L'APK necessite egalement de l'espace pour extraire le modele Whisper dans le
-stockage prive (la diarisation n'est pas embarquee sur Android, voir
-[Architecture](docs/ARCHITECTURE.md)). L'installation Windows et Linux est
-verifiee automatiquement (installation, desinstallation, sommes de controle) a
-chaque publication; la validation Android sur appareil physique reel reste a
-faire.
+`pnpm models:prepare` recupere Whisper Large v3 Turbo Q5_0 et, pour le bureau, le modele d'empreintes vocales WeSpeaker CAM++ (diarisation). `pnpm models:verify` controle leur taille et leur SHA-256; c'est fait automatiquement avant tout build natif. Ces fichiers ne doivent jamais etre ajoutes a Git. Les workflows GitHub Actions preparent les modeles avant de construire les installateurs et l'APK, et verifient reellement l'installation/desinstallation (Windows, Linux) avant publication.
