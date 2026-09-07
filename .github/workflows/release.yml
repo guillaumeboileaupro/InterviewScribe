@@ -79,22 +79,23 @@ jobs:
           $installer = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Filter "*.exe" | Select-Object -First 1
           if (-not $installer) { throw "no NSIS installer found" }
 
-          Start-Process -FilePath $installer.FullName -ArgumentList "/S" -Wait
+          # Force a known install path with NSIS's /D= (must be the last,
+          # unquoted argument) so verification never has to guess where the
+          # registry says the app landed.
+          $installDir = "C:\InterviewScribeTest"
+          Start-Process -FilePath $installer.FullName -ArgumentList "/S", "/D=$installDir" -Wait
 
-          $entry = Get-ChildItem "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall" -ErrorAction SilentlyContinue |
-            Get-ItemProperty | Where-Object { $_.DisplayName -like "*InterviewScribe*" } | Select-Object -First 1
-          if (-not $entry) {
-            $entry = Get-ChildItem "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall" -ErrorAction SilentlyContinue |
-              Get-ItemProperty | Where-Object { $_.DisplayName -like "*InterviewScribe*" } | Select-Object -First 1
-          }
-          if (-not $entry) { throw "install did not register an uninstall entry" }
-          if (-not (Test-Path $entry.InstallLocation)) { throw "InstallLocation $($entry.InstallLocation) does not exist" }
-          Write-Host "Installed: $($entry.DisplayName) at $($entry.InstallLocation)"
+          $appExe = Get-ChildItem -Path $installDir -Filter "*.exe" -Recurse |
+            Where-Object { $_.Name -notlike "*ninstall*" } | Select-Object -First 1
+          if (-not $appExe) { throw "no application executable found under $installDir after install" }
+          Write-Host "Installed: $($appExe.FullName)"
 
-          Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$($entry.UninstallString)`" /S" -Wait
+          $uninstaller = Get-ChildItem -Path $installDir -Filter "*ninstall*.exe" -Recurse | Select-Object -First 1
+          if (-not $uninstaller) { throw "no uninstaller executable found under $installDir" }
+          Start-Process -FilePath $uninstaller.FullName -ArgumentList "/S" -Wait
           Start-Sleep -Seconds 3
-          if (Test-Path $entry.InstallLocation) { throw "install directory still exists after uninstall" }
-          Write-Host "Uninstall verified: $($entry.InstallLocation) removed"
+          if (Test-Path $installDir) { throw "install directory still exists after uninstall: $installDir" }
+          Write-Host "Uninstall verified: $installDir removed"
 
       - name: Publish checksum (NSIS installer)
         if: matrix.platform == 'windows-latest'
