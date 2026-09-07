@@ -20,8 +20,14 @@ keystore_path="${1:?usage: android-sign.sh <path-to-keystore.jks>}"
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repo_root=$(cd -- "$script_dir/.." && pwd)
 gradle_dir="$repo_root/src-tauri/gen/android"
-gradle_file="$gradle_dir/app/build.gradle.kts"
-properties_file="$gradle_dir/keystore.properties"
+app_dir="$gradle_dir/app"
+gradle_file="$app_dir/build.gradle.kts"
+# Must live next to build.gradle.kts: `file("keystore.properties")` inside a
+# module-level Kotlin DSL script resolves relative to that module's own
+# directory (app/), not the project root - a real Gradle failure
+# ("SigningConfig \"release\" is missing required property \"storeFile\"")
+# caught this when the file was written one level too high.
+properties_file="$app_dir/keystore.properties"
 
 if [ ! -f "$gradle_file" ]; then
   echo "android-sign.sh: $gradle_file not found - run 'pnpm tauri android init' first" >&2
