@@ -69,12 +69,17 @@ Limites connues: pas de test de mise a niveau (installer par-dessus une version 
 
 ## Phase 6 - Android
 
-- [ ] Lire les fichiers importes via une URI `content://` (pas seulement un chemin disque).
-- [ ] Adapter capture, stockage, permissions et cycle de vie.
-- [ ] Optimiser un modele quantifie pour telephone.
-- [ ] Tester interruption, verrouillage d'ecran, batterie et temperature.
-- [ ] Generer et signer l'APK.
-- [ ] Documenter les limites selon la memoire du telephone.
+- [x] Lire les fichiers importes via une URI `content://` (pas seulement un chemin disque). Code corrige (reutilise `tauri_plugin_fs`, meme mecanisme que le modele Whisper embarque) et compile reellement pour Android en CI; **non teste sur appareil ou emulateur reel** (aucun materiel disponible dans cet environnement).
+- [x] Adapter permissions et stockage. `RECORD_AUDIO` ajoutee de facon persistante (via `build.rs`, survit a la regeneration de `gen/android`); stockage prive utilise pour l'import et les modeles.
+- [ ] Adapter capture et cycle de vie. La capture microphone (Phase 4) compile desormais pour Android (apres correction de `minSdkVersion`), mais son fonctionnement reel sur ce backend (AAudio) n'a jamais ete teste sur un appareil; le cycle de vie applicatif (mise en arriere-plan, interruption) n'a pas ete traite dans cette passe.
+- [ ] Optimiser un modele quantifie pour telephone. Non fait: le meme modele Whisper Turbo Q5_0 que le bureau est utilise, sans variante plus legere specifique au telephone. La diarisation, elle, est desactivee sur Android (voir limite ci-dessous), donc son modele n'est pas charge la-bas.
+- [ ] Tester interruption, verrouillage d'ecran, batterie et temperature. **Non fait et non faisable dans cet environnement**: aucun appareil Android physique ni emulateur configure ici. A faire par un humain avec acces materiel.
+- [x] Generer et signer l'APK. Verifie reellement: build signe via un keystore de test (secrets GitHub Actions, jamais commite), signature confirmee par `apksigner verify` en CI. Limite au ABI `arm64-v8a` (voir note ci-dessous).
+- [x] Documenter les limites selon la memoire du telephone. Documentation analytique uniquement (tailles de modeles connues); **aucune mesure reelle de memoire/batterie/temperature sur appareil**, a la difference du reste du projet qui exige une verification reelle - ecart assume et signale, pas cache.
+
+Limites reelles trouvees et traitees pendant cette phase (invisibles avant un vrai build cible, comme en Phase 5): la diarisation (`pyannote-rs`/`ort`) ne compile pas du tout pour Android - `ort-sys` ne publie aucun binaire precompile pour cette cible (verifie en lisant son `build.rs`, pas une hypothese) - donc **desactivee sur Android**, retour au comportement mono-locuteur de la Phase 1 (voir "Diarisation" dans `docs/ARCHITECTURE.md`). `cpal` (capture, Phase 4) necessite AAudio, absent du sysroot NDK avant l'API 26: `minSdkVersion` releve de 24 a 26 (Android 8.0+). L'architecture `armv7` (32 bits) rencontre un probleme distinct de generation de bindings (`bindgen`) sur le NDK du runner CI, non resolu; la publication se limite a `arm64-v8a`, qui couvre la quasi-totalite des appareils reels.
+
+Critere de sortie: une APK signee, installable sur un appareil arm64-v8a, capable d'importer un fichier audio via le selecteur systeme et de le transcrire localement avec Whisper. **Non atteint entierement**: la chaine ci-dessus est verifiee jusqu'a la production d'une APK signee reelle en CI, mais aucune etape n'a pu etre verifiee sur un appareil ou emulateur Android reel (import `content://` en conditions reelles, capture microphone, interruption, verrouillage, batterie, temperature) faute de materiel disponible dans cet environnement de developpement - a faire avant de considerer la Phase 6 close.
 
 ## Definition de termine
 

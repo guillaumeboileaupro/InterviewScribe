@@ -22,7 +22,7 @@ Elle vise a transformer une conversation en texte en temps reel ou depuis un enr
 
 Sur bureau (Windows, Linux): import audio ou capture microphone en direct, transcription Whisper locale, diarisation locale multi-locuteurs (renommage/fusion/reassignation), nettoyage reversible des hesitations, export TXT/Markdown/JSON/SRT/VTT/DOCX/PDF/DOC, et une chaine de publication reelle (executable et installateur NSIS Windows, paquet Debian) verifiee par installation et desinstallation automatisees sur des runners reels.
 
-Sur Android: l'application compile et s'installe (import de fichier via le selecteur systeme, transcription Whisper locale), mais la diarisation y est desactivee (limite technique documentee dans [Architecture](docs/ARCHITECTURE.md)) et la validation complete sur appareil physique reste a faire.
+Sur Android: une APK signee (arm64-v8a) est produite et sa signature verifiee automatiquement a chaque publication, avec l'import de fichier via le selecteur systeme et la transcription Whisper locale corriges pour cette plateforme. La diarisation y est desactivee (limite technique documentee dans [Architecture](docs/ARCHITECTURE.md)) et **aucun test sur appareil ou emulateur physique n'a ete effectue** (uniquement verifie par compilation et signature reelles en CI) - a faire avant de considerer Android pleinement valide.
 
 Consultez:
 
