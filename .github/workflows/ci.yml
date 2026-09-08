@@ -76,3 +76,38 @@ jobs:
           # transcript, or the SQLite database (item 2.7).
           path: /tmp/tauri-driver.log
           if-no-files-found: ignore
+
+  # Windows counterpart to e2e-linux (item 2.6): same suite, same
+  # tauri-driver harness, but over Microsoft Edge/WebView2 instead of
+  # WebKitWebDriver, and native dialogs driven via Win32 interop
+  # (scripts/native-dialog-windows.ps1) instead of xdotool.
+  e2e-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: pnpm install --frozen-lockfile
+      - name: Prepare bundled Whisper models (checksum verified)
+        run: pnpm models:prepare
+      - name: Build the desktop installer
+        run: pnpm tauri build --bundles nsis
+      - name: Install tauri-driver
+        run: cargo install tauri-driver
+      - name: Run E2E suite
+        run: pnpm test:e2e:windows
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-windows-diagnostics
+          # tauri-driver process-lifecycle log only - never audio, a
+          # transcript, or the SQLite database (item 2.7).
+          path: |
+            ${{ runner.temp }}/tauri-driver.log
+            ${{ runner.temp }}/tauri-driver.log.err
+          if-no-files-found: ignore

@@ -139,6 +139,8 @@ E2E et leurs dependances restent hors de ce lot.
 - [x] 3.7 Fixer des seuils initiaux documentes, puis faire echouer les regressions.
 - [ ] 3.8 Executer la qualification lourde manuellement ou la nuit, jamais sur
   chaque commit.
+  - [x] Test opt-in du clip francophone public, sans texte brut dans le rapport.
+  - [ ] Executer et archiver les metriques agregees Large v3 Turbo.
 
 Critere de sortie : chaque mesure est reproductible depuis un manifeste epingle
 et ne depend d'aucune donnee sensible.

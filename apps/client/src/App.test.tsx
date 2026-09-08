@@ -655,8 +655,13 @@ describe("App", () => {
     const modelSelect = await screen.findByRole("combobox", {
       name: "Modèle de transcription",
     });
+    // The select itself renders synchronously; its options only appear once
+    // the mocked listAvailableModels() promise resolves - findByRole (not
+    // getByRole) is required here or this races and flakes.
     expect(
-      screen.getByRole("option", { name: "Whisper Small (Q5_1) · 191 Mo" }),
+      await screen.findByRole("option", {
+        name: "Whisper Small (Q5_1) · 191 Mo",
+      }),
     ).toBeInTheDocument();
     fireEvent.change(modelSelect, { target: { value: "base" } });
 

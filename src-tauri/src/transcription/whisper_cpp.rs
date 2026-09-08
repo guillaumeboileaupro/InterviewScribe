@@ -177,6 +177,54 @@ mod tests {
         }
     }
 
+    /// Reproducible public-corpus qualification. Unlike `whisper_qa_sample`,
+    /// this never prints recognized or reference text: only aggregate WER/CER.
+    /// Run manually/nightly with the pinned files from tests/corpus/manifest.json.
+    #[test]
+    #[ignore]
+    fn whisper_public_french_quality_thresholds() {
+        let model_path = std::env::var("INTERVIEWSCRIBE_TEST_MODEL")
+            .expect("set INTERVIEWSCRIBE_TEST_MODEL to a local ggml model path");
+        let audio_path = std::env::var("INTERVIEWSCRIBE_TEST_WAV")
+            .expect("set INTERVIEWSCRIBE_TEST_WAV to the pinned public French audio");
+        let pcm = crate::audio::decode::decode_to_mono_pcm16k(std::path::Path::new(&audio_path))
+            .expect("failed to decode public corpus audio");
+        let transcriber = WhisperCppTranscriber::load(std::path::Path::new(&model_path))
+            .expect("failed to load model");
+        let segments = transcriber
+            .transcribe(&pcm, Some("fr"))
+            .expect("failed to transcribe public corpus audio");
+        let hypothesis = segments
+            .iter()
+            .map(|segment| segment.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        let reference = "avoir un chat dans la gorge";
+        let wer = crate::evaluation::word_error_rate(reference, &hypothesis).rate;
+        let cer = crate::evaluation::character_error_rate(reference, &hypothesis).rate;
+        println!("public-fr metrics: wer={wer:.4}, cer={cer:.4}");
+        let violations = crate::evaluation::quality_threshold_violations(
+            crate::evaluation::QualitySnapshot {
+                wer,
+                cer,
+                der: 0.0,
+                duplicate_rate: 0.0,
+                max_timestamp_drift_ms: 0,
+            },
+            crate::evaluation::QualityThresholds {
+                max_wer: 0.45,
+                max_cer: 0.30,
+                max_der: 0.50,
+                max_duplicate_rate: 0.02,
+                max_timestamp_drift_ms: 500,
+            },
+        );
+        assert!(
+            violations.is_empty(),
+            "quality thresholds exceeded: {violations:?}"
+        );
+    }
+
     /// Deterministic PRNG-based white noise, scaled to hit a target SNR against the
     /// given signal. No external `rand` dependency needed for a test-only helper.
     #[cfg(test)]

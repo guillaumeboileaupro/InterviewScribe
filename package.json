@@ -22,7 +22,8 @@
     "test:privacy": "node --test scripts/privacy.test.mjs",
     "test:corpus-manifest": "node --test scripts/corpus-manifest.test.mjs",
     "corpus:prepare": "node scripts/prepare-test-corpus.mjs",
-    "test:e2e:linux": "bash scripts/e2e-linux.sh"
+    "test:e2e:linux": "bash scripts/e2e-linux.sh",
+    "test:e2e:windows": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/e2e-windows.ps1"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
