@@ -37,7 +37,12 @@ export XDG_CONFIG_HOME="$PROFILE_DIR/config"
 export XDG_CACHE_HOME="$PROFILE_DIR/cache"
 mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME"
 
-setsid tauri-driver --port 4444 &
+# Captured to a fixed, predictable path (not the throwaway profile dir, so
+# it survives cleanup) so CI can upload it as a diagnostic artifact on
+# failure - contains process lifecycle messages only, never audio or
+# transcript content (docs/TEST_IMPLEMENTATION_PLAN.md item 2.7).
+DRIVER_LOG="${INTERVIEWSCRIBE_E2E_DRIVER_LOG:-/tmp/tauri-driver.log}"
+setsid tauri-driver --port 4444 >"$DRIVER_LOG" 2>&1 &
 DRIVER_PID=$!
 
 for _ in $(seq 1 50); do

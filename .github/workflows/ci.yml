@@ -38,3 +38,41 @@ jobs:
       - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
       - run: cargo test --manifest-path src-tauri/Cargo.toml
+
+  # Real E2E (docs/TEST_IMPLEMENTATION_PLAN.md item 2.5): drives the actual
+  # installed application through tauri-driver/WebKitWebDriver, never a
+  # simulated frontend - see e2e/. Runs under Xvfb since this runner has no
+  # real display; xdotool (native file dialog automation) works the same
+  # way under a virtual X server as a real one.
+  e2e-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Tauri and E2E system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf cmake clang libasound2-dev webkit2gtk-driver xdotool xvfb
+      - run: pnpm install --frozen-lockfile
+      - name: Prepare bundled Whisper models (checksum verified)
+        run: pnpm models:prepare
+      - name: Build the desktop .deb
+        run: pnpm tauri build --bundles deb
+      - name: Install the built package
+        run: sudo dpkg -i src-tauri/target/release/bundle/deb/*.deb
+      - name: Install tauri-driver
+        run: cargo install tauri-driver
+      - name: Run E2E suite
+        run: xvfb-run --auto-servernum pnpm test:e2e:linux
+      - name: Upload diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-linux-diagnostics
+          # tauri-driver process-lifecycle log only - never audio, a
+          # transcript, or the SQLite database (item 2.7).
+          path: /tmp/tauri-driver.log
+          if-no-files-found: ignore
