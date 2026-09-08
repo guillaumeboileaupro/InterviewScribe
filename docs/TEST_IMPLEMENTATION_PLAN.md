@@ -218,4 +218,4 @@ et ne depend d'aucune donnee sensible.
 | 2026-09-08 | 3.2 | Sources mono francophone et AMI quatre voix selectionnees, attribuees et epinglees. |
 | 2026-09-08 | 3.7 | Seuils initiaux WER/CER/DER/doublons/derive versionnes et depassements bloquants testes. |
 | 2026-09-08 | 3.8 (partiel) | Qualification Large v3 Turbo reelle : WER 0,0000, CER 0,0000, 149,15 s ; rapport sans contenu brut. |
-| 2026-09-08 | 3.8 (AMI) | Archive d'annotations 1.6.2 epinglee ; reference 120-130 s extraite localement sans contenu dans les logs. |
+| 2026-09-08 | 3.8 (AMI) | Audio et annotations 1.6.2 epingles ; fenetre 76-86 s selectionnee apres verification des quatre voix A-D, sans contenu dans les logs. |

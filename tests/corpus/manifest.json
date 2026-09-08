@@ -59,7 +59,7 @@
       "language": "en",
       "speaker_count": 4,
       "redistributable": true,
-      "notes": "Official NXT manual annotations; preparation extracts only ES2002a words overlapping 120-130 s."
+      "notes": "Official NXT manual annotations; preparation extracts ES2002a words overlapping 76-86 s, a window containing speakers A-D."
     }
   ],
   "planned_cases": [
@@ -71,7 +71,8 @@
     {
       "id": "multi-clean-4",
       "source": "ami-es2002a-mix-headset",
-      "state": "selected"
+      "state": "selected",
+      "sha256": "b53cb12f34f7d2973d8273d109ee64e8eec42154db0e18b06d135835eb6494de"
     },
     {
       "id": "silence",
@@ -83,19 +84,19 @@
       "id": "noise",
       "source": "synthetic-deterministic",
       "state": "generated-by-script",
-      "sha256": "058d6418d3c3f20dd36822875df8bbe863794fead5ec6992e7cc62f1c360dbf2"
+      "sha256": "56f20333b6b3f9c95912f7d735d7a1e72941c754d35c42226345ac53cac2291c"
     },
     {
       "id": "music",
       "source": "synthetic-tones",
       "state": "generated-by-script",
-      "sha256": "b59dab7f8d6a312e15913c1ae525d2cdcaf22209fa5e82fc7c9f545f1f13c7cd"
+      "sha256": "54fd6d2c523a619d27504526b38dd063930791563abfbaffdb6042f7a1efecc9"
     },
     {
       "id": "overlap",
       "source": "ami-derived-mix",
       "state": "generated-by-script",
-      "sha256": "57ebe411ce9173185d3ecb9628a23a773897784e23922cadb656a5a007102212"
+      "sha256": "812e05abba35c20269c9cf1aaaaf63480f4721cd3dc30858c847bc7f746f5af0"
     }
   ]
 }

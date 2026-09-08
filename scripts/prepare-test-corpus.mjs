@@ -4,6 +4,7 @@ import { basename, join, resolve } from "node:path";
 
 const sourcePath = resolve(process.argv[2] ?? "/tmp/ES2002a.Mix-Headset.wav");
 const annotationsDirectory = process.argv[3] ? resolve(process.argv[3]) : null;
+const updateHashes = process.argv.includes("--update-hashes");
 const manifestPath = new URL("../tests/corpus/manifest.json", import.meta.url);
 const outputDirectory = new URL("../tests/corpus/generated/", import.meta.url);
 const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
@@ -20,7 +21,8 @@ if (input.length !== source.size_bytes || digest !== source.sha256) {
   );
 }
 const wav = parsePcm16MonoWav(input);
-const startSample = 120 * wav.sampleRate;
+const windowStartSeconds = 76;
+const startSample = windowStartSeconds * wav.sampleRate;
 const sampleCount = 10 * wav.sampleRate;
 if (startSample + sampleCount > wav.samples.length)
   throw new Error("source AMI trop courte");
@@ -57,7 +59,7 @@ for (const [id, samples] of Object.entries(cases)) {
   const expected = manifest.planned_cases.find(
     (entry) => entry.id === id,
   )?.sha256;
-  if (expected && outputDigest !== expected) {
+  if (!updateHashes && expected && outputDigest !== expected) {
     throw new Error(
       `fixture ${id} non deterministe: attendu=${expected}, obtenu=${outputDigest}`,
     );
@@ -85,11 +87,16 @@ if (annotationsDirectory) {
     )) {
       const start = Number(match[1]);
       const end = Number(match[2]);
-      if (end < 120 || start > 130 || /punc="true"/.test(match[0])) continue;
+      if (
+        end < windowStartSeconds ||
+        start > windowStartSeconds + 10 ||
+        /punc="true"/.test(match[0])
+      )
+        continue;
       words.push({
         speaker,
-        start_ms: Math.max(0, Math.round((start - 120) * 1000)),
-        end_ms: Math.min(10_000, Math.round((end - 120) * 1000)),
+        start_ms: Math.max(0, Math.round((start - windowStartSeconds) * 1000)),
+        end_ms: Math.min(10_000, Math.round((end - windowStartSeconds) * 1000)),
         text: decodeXml(match[3]),
       });
     }
@@ -97,7 +104,7 @@ if (annotationsDirectory) {
   words.sort((left, right) => left.start_ms - right.start_ms);
   await writeFile(
     new URL("ami-reference.json", outputDirectory),
-    `${JSON.stringify({ source: "ES2002a", window_ms: [120000, 130000], words }, null, 2)}\n`,
+    `${JSON.stringify({ source: "ES2002a", window_ms: [76000, 86000], words }, null, 2)}\n`,
   );
   console.log(
     `AMI reference prepared: ${words.length} timed words (content not logged)`,
