@@ -101,7 +101,7 @@ E2E et leurs dependances restent hors de ce lot.
 - [ ] 3.2 Selectionner des extraits redistribuables mono-locuteur et 2 a 5 voix.
 - [ ] 3.3 Ajouter silence, bruit, musique et chevauchement, sans donnee privee.
 - [x] 3.4 Implementer normalisation texte et calcul WER/CER.
-- [ ] 3.5 Implementer DER, confusion de locuteur et couverture `uncertain`.
+- [x] 3.5 Implementer DER, confusion de locuteur et couverture `uncertain`.
 - [ ] 3.6 Mesurer doublons et derive des horodatages aux frontieres.
 - [ ] 3.7 Fixer des seuils initiaux documentes, puis faire echouer les regressions.
 - [ ] 3.8 Executer la qualification lourde manuellement ou la nuit, jamais sur
@@ -172,3 +172,4 @@ et ne depend d'aucune donnee sensible.
 | 2026-09-08 | 1.8 | Matrice automatique zero/partiel/corrompu/silence/repetition/export terminee. |
 | 2026-09-08 | 3.4 | Normalisation Unicode reproductible et calculs WER/CER implementes et testes. |
 | 2026-09-08 | 2.1-2.3 | Harnais E2E reel (tauri-driver/WebKitWebDriver/WebdriverIO) pilotant le binaire installe ; 3 tests verts en conditions reelles. |
+| 2026-09-08 | 3.5 | DER decompose, confusion locuteur et couverture `uncertain` implementes et testes. |
