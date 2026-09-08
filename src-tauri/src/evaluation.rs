@@ -199,6 +199,51 @@ pub fn boundary_metrics(reference: &[TimedText], hypothesis: &[TimedText]) -> Bo
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct QualitySnapshot {
+    pub wer: f64,
+    pub cer: f64,
+    pub der: f64,
+    pub duplicate_rate: f64,
+    pub max_timestamp_drift_ms: i64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct QualityThresholds {
+    pub max_wer: f64,
+    pub max_cer: f64,
+    pub max_der: f64,
+    pub max_duplicate_rate: f64,
+    pub max_timestamp_drift_ms: i64,
+}
+
+/// Returns stable metric names for every release-blocking regression. Values
+/// equal to a threshold pass; non-finite rates always fail closed.
+pub fn quality_threshold_violations(
+    snapshot: QualitySnapshot,
+    thresholds: QualityThresholds,
+) -> Vec<&'static str> {
+    let mut violations = Vec::new();
+    for (name, value, maximum) in [
+        ("wer", snapshot.wer, thresholds.max_wer),
+        ("cer", snapshot.cer, thresholds.max_cer),
+        ("der", snapshot.der, thresholds.max_der),
+        (
+            "duplicate_rate",
+            snapshot.duplicate_rate,
+            thresholds.max_duplicate_rate,
+        ),
+    ] {
+        if !value.is_finite() || value > maximum {
+            violations.push(name);
+        }
+    }
+    if snapshot.max_timestamp_drift_ms > thresholds.max_timestamp_drift_ms {
+        violations.push("max_timestamp_drift_ms");
+    }
+    violations
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -379,5 +424,67 @@ mod tests {
         assert_eq!(metric.mean_start_drift_ms, 0.0);
         assert_eq!(metric.mean_end_drift_ms, 0.0);
         assert_eq!(metric.max_drift_ms, 0);
+    }
+
+    fn initial_thresholds() -> QualityThresholds {
+        QualityThresholds {
+            max_wer: 0.45,
+            max_cer: 0.30,
+            max_der: 0.50,
+            max_duplicate_rate: 0.02,
+            max_timestamp_drift_ms: 500,
+        }
+    }
+
+    #[test]
+    fn quality_at_the_threshold_is_accepted() {
+        let thresholds = initial_thresholds();
+        let snapshot = QualitySnapshot {
+            wer: thresholds.max_wer,
+            cer: thresholds.max_cer,
+            der: thresholds.max_der,
+            duplicate_rate: thresholds.max_duplicate_rate,
+            max_timestamp_drift_ms: thresholds.max_timestamp_drift_ms,
+        };
+        assert!(quality_threshold_violations(snapshot, thresholds).is_empty());
+    }
+
+    #[test]
+    fn every_quality_regression_is_reported() {
+        let violations = quality_threshold_violations(
+            QualitySnapshot {
+                wer: 0.46,
+                cer: 0.31,
+                der: 0.51,
+                duplicate_rate: 0.03,
+                max_timestamp_drift_ms: 501,
+            },
+            initial_thresholds(),
+        );
+        assert_eq!(
+            violations,
+            [
+                "wer",
+                "cer",
+                "der",
+                "duplicate_rate",
+                "max_timestamp_drift_ms"
+            ]
+        );
+    }
+
+    #[test]
+    fn non_finite_quality_rates_fail_closed() {
+        let violations = quality_threshold_violations(
+            QualitySnapshot {
+                wer: f64::NAN,
+                cer: 0.0,
+                der: f64::INFINITY,
+                duplicate_rate: 0.0,
+                max_timestamp_drift_ms: 0,
+            },
+            initial_thresholds(),
+        );
+        assert_eq!(violations, ["wer", "der"]);
     }
 }

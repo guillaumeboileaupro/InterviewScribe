@@ -5,6 +5,14 @@
     "generated_directory": "tests/corpus/generated",
     "contains_private_data": false
   },
+  "quality_thresholds": {
+    "status": "initial-conservative-until-first-real-baseline",
+    "max_wer": 0.45,
+    "max_cer": 0.3,
+    "max_der": 0.5,
+    "max_duplicate_rate": 0.02,
+    "max_timestamp_drift_ms": 500
+  },
   "sources": [
     {
       "id": "ami-es2002a-mix-headset",

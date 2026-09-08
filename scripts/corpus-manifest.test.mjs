@@ -20,6 +20,18 @@ test("corpus sources are public, licensed and integrity-pinned", async () => {
   }
 });
 
+test("quality thresholds are finite and release-blocking", async () => {
+  const { quality_thresholds: thresholds } = JSON.parse(
+    await readFile(manifestUrl, "utf8"),
+  );
+  for (const key of ["max_wer", "max_cer", "max_der", "max_duplicate_rate"]) {
+    assert.ok(Number.isFinite(thresholds[key]));
+    assert.ok(thresholds[key] >= 0 && thresholds[key] <= 1);
+  }
+  assert.ok(Number.isInteger(thresholds.max_timestamp_drift_ms));
+  assert.ok(thresholds.max_timestamp_drift_ms > 0);
+});
+
 test("the manifest tracks every required acoustic case", async () => {
   const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
   const ids = new Set(manifest.planned_cases.map((entry) => entry.id));

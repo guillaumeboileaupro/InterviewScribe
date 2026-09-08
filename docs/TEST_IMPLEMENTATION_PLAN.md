@@ -136,7 +136,7 @@ E2E et leurs dependances restent hors de ce lot.
 - [x] 3.4 Implementer normalisation texte et calcul WER/CER.
 - [x] 3.5 Implementer DER, confusion de locuteur et couverture `uncertain`.
 - [x] 3.6 Mesurer doublons et derive des horodatages aux frontieres.
-- [ ] 3.7 Fixer des seuils initiaux documentes, puis faire echouer les regressions.
+- [x] 3.7 Fixer des seuils initiaux documentes, puis faire echouer les regressions.
 - [ ] 3.8 Executer la qualification lourde manuellement ou la nuit, jamais sur
   chaque commit.
 
@@ -212,3 +212,4 @@ et ne depend d'aucune donnee sensible.
 | 2026-09-08 | 3.1 | Manifeste sans audio prive, source AMI officielle/licence/taille/SHA-256 et validateur ajoutes. |
 | 2026-09-08 | 3.3 | Generateur deterministe silence/bruit/tons musicaux/chevauchement, sorties WAV ignorees par Git. |
 | 2026-09-08 | 3.2 | Sources mono francophone et AMI quatre voix selectionnees, attribuees et epinglees. |
+| 2026-09-08 | 3.7 | Seuils initiaux WER/CER/DER/doublons/derive versionnes et depassements bloquants testes. |
