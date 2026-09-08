@@ -57,7 +57,7 @@ Write-Host "Edge version: $edgeVersion"
 $driverDir = Join-Path $env:RUNNER_TEMP "msedgedriver"
 New-Item -ItemType Directory -Force -Path $driverDir | Out-Null
 $zipPath = Join-Path $driverDir "edgedriver_win64.zip"
-Invoke-WebRequest -Uri "https://msedgedriver.azureedge.net/$edgeVersion/edgedriver_win64.zip" -OutFile $zipPath
+Invoke-WebRequest -Uri "https://msedgedriver.microsoft.com/$edgeVersion/edgedriver_win64.zip" -OutFile $zipPath
 Expand-Archive -Path $zipPath -DestinationPath $driverDir -Force
 $env:PATH = "$driverDir;$env:PATH"
 
