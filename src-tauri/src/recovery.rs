@@ -58,6 +58,30 @@ pub fn transcribe_remainder<T: crate::transcription::Transcriber>(
     Ok(rebase_and_filter(raw, boundary_ms, existing))
 }
 
+/// Persists recovered speech without guessing continuity with the diarization
+/// state lost during interruption. A human may assign speakers afterwards.
+pub fn insert_as_uncertain(
+    conn: &Connection,
+    interview_id: i64,
+    recovered: Vec<crate::transcription::RawSegment>,
+) -> Result<Vec<i64>, AppError> {
+    let segments: Vec<db::segments::NewSegment> = recovered
+        .into_iter()
+        .map(|segment| db::segments::NewSegment {
+            speaker_id: None,
+            start_ms: segment.start_ms,
+            end_ms: segment.end_ms,
+            raw_text: segment.text,
+            confidence: segment.confidence,
+        })
+        .collect();
+    let ids = db::segments::insert_batch(conn, interview_id, &segments)?;
+    for id in &ids {
+        db::segments::mark_uncertain(conn, *id)?;
+    }
+    Ok(ids)
+}
+
 /// Validates an interrupted recording before recovery. This is deliberately
 /// read-only: existing segments (including immutable `raw_text`) remain the
 /// evidence boundary for the later resume operation.
@@ -264,5 +288,28 @@ mod tests {
         let recovered = transcribe_remainder(&transcriber, &pcm, None, 750, &[]).unwrap();
         assert_eq!(recovered[0].start_ms, 750);
         assert_eq!(recovered[0].end_ms, 950);
+    }
+
+    #[test]
+    fn recovered_segments_have_no_guessed_speaker_and_are_uncertain() {
+        let (conn, audio_dir) = setup("speaker");
+        let interview = interrupted(&conn, &audio_dir);
+        let ids = insert_as_uncertain(
+            &conn,
+            interview.id,
+            vec![crate::transcription::RawSegment {
+                start_ms: 500,
+                end_ms: 900,
+                text: "Voix non reliee".into(),
+                confidence: Some(0.7),
+            }],
+        )
+        .unwrap();
+
+        let segment = db::segments::get(&conn, ids[0]).unwrap();
+        assert_eq!(segment.speaker_id, None);
+        assert_eq!(segment.status, "uncertain");
+        assert_eq!(segment.raw_text, "Voix non reliee");
+        std::fs::remove_dir_all(audio_dir).ok();
     }
 }

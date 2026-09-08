@@ -165,18 +165,8 @@ fn recover_interview_local(
         &existing,
     )?;
 
-    let new_segments: Vec<db::segments::NewSegment> = recovered
-        .into_iter()
-        .map(|segment| db::segments::NewSegment {
-            speaker_id: None,
-            start_ms: segment.start_ms,
-            end_ms: segment.end_ms,
-            raw_text: segment.text,
-            confidence: segment.confidence,
-        })
-        .collect();
     let conn = lock_db(db)?;
-    db::segments::insert_batch(&conn, interview_id, &new_segments)?;
+    recovery::insert_as_uncertain(&conn, interview_id, recovered)?;
     db::interviews::update_status(&conn, interview_id, "transcribed", None)?;
     db::get_detail(&conn, interview_id)
 }
