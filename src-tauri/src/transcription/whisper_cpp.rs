@@ -486,8 +486,8 @@ mod tests {
         for (i, row) in costs.iter_mut().enumerate() {
             row[0] = i;
         }
-        for j in 0..=hypothesis.len() {
-            costs[0][j] = j;
+        for (j, cost) in costs[0].iter_mut().enumerate() {
+            *cost = j;
         }
         for i in 1..=reference.len() {
             for j in 1..=hypothesis.len() {
