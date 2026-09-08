@@ -54,7 +54,7 @@ supprimer les segments bruts deja stabilises et sans creer de doublons.
   incertaine plutot que fusion forcee si l'identite ne peut pas etre reliee.
 - [x] 1.7 Ajouter l'action UI `Recuperer`, ses etats occupes/erreur et une option
   `Conserver en l'etat`.
-- [ ] 1.8 Tester : aucun segment, segments partiels, WAV absent/corrompu, silence
+- [x] 1.8 Tester : aucun segment, segments partiels, WAV absent/corrompu, silence
   final, interruption repetee et export apres recuperation.
 - [ ] 1.9 `MATERIEL` Executer fermeture forcee pendant une vraie capture, relancer
   l'application et verifier audio, segments et export.
@@ -154,3 +154,4 @@ et ne depend d'aucune donnee sensible.
 | 2026-09-08 | 1.5 | Commande Whisper de reprise cablee au suffixe audio et persistance additive implementee. |
 | 2026-09-08 | 1.6 | Segments recuperes sans locuteur invente et marques `uncertain` jusqu'a validation humaine. |
 | 2026-09-08 | 1.7 | Actions UI `Recuperer`/`Conserver en l'etat`, chargement et erreur implementes. |
+| 2026-09-08 | 1.8 | Matrice automatique zero/partiel/corrompu/silence/repetition/export terminee. |

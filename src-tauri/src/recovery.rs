@@ -54,7 +54,11 @@ pub fn transcribe_remainder<T: crate::transcription::Transcriber>(
     boundary_ms: i64,
     existing: &[db::models::Segment],
 ) -> Result<Vec<crate::transcription::RawSegment>, AppError> {
-    let raw = transcriber.transcribe(pcm_after_boundary(pcm, boundary_ms), language)?;
+    let suffix = pcm_after_boundary(pcm, boundary_ms);
+    if suffix.is_empty() {
+        return Ok(Vec::new());
+    }
+    let raw = transcriber.transcribe(suffix, language)?;
     Ok(rebase_and_filter(raw, boundary_ms, existing))
 }
 
@@ -206,6 +210,20 @@ mod tests {
     }
 
     #[test]
+    fn a_session_without_segments_recovers_from_the_start() {
+        let (conn, audio_dir) = setup("empty");
+        let interview = interrupted(&conn, &audio_dir);
+        write_wav(Path::new(&interview.audio_path), 500);
+
+        let result = inspect(&conn, interview.id, &audio_dir).unwrap();
+
+        assert_eq!(result.segment_count, 0);
+        assert_eq!(result.last_stable_end_ms, 0);
+        assert_eq!(result.remaining_ms, 500);
+        std::fs::remove_dir_all(audio_dir).ok();
+    }
+
+    #[test]
     fn rejects_missing_corrupt_and_external_audio() {
         let (conn, audio_dir) = setup("invalid");
         let missing = interrupted(&conn, &audio_dir);
@@ -291,6 +309,43 @@ mod tests {
     }
 
     #[test]
+    fn final_silence_produces_no_segment_and_preserves_existing_evidence() {
+        let transcriber = crate::transcription::tests_support::FakeTranscriber { segments: vec![] };
+        let existing = vec![db::models::Segment {
+            id: 1,
+            interview_id: 1,
+            speaker_id: None,
+            start_ms: 0,
+            end_ms: 750,
+            raw_text: "Déjà stable".into(),
+            current_text: "Déjà stable".into(),
+            confidence: None,
+            status: "raw".into(),
+        }];
+
+        let recovered =
+            transcribe_remainder(&transcriber, &vec![0.0; 16_000], Some("fr"), 750, &existing)
+                .unwrap();
+        assert!(recovered.is_empty());
+        assert_eq!(existing[0].raw_text, "Déjà stable");
+    }
+
+    #[test]
+    fn repeated_recovery_at_audio_end_is_a_no_op() {
+        let transcriber = crate::transcription::tests_support::FakeTranscriber {
+            segments: vec![crate::transcription::RawSegment {
+                start_ms: 0,
+                end_ms: 100,
+                text: "Ne doit pas être produit".into(),
+                confidence: None,
+            }],
+        };
+        let recovered =
+            transcribe_remainder(&transcriber, &vec![0.0; 16_000], None, 1_000, &[]).unwrap();
+        assert!(recovered.is_empty());
+    }
+
+    #[test]
     fn recovered_segments_have_no_guessed_speaker_and_are_uncertain() {
         let (conn, audio_dir) = setup("speaker");
         let interview = interrupted(&conn, &audio_dir);
@@ -310,6 +365,38 @@ mod tests {
         assert_eq!(segment.speaker_id, None);
         assert_eq!(segment.status, "uncertain");
         assert_eq!(segment.raw_text, "Voix non reliee");
+        std::fs::remove_dir_all(audio_dir).ok();
+    }
+
+    #[test]
+    fn recovered_raw_text_can_be_exported_with_its_rebased_timestamp() {
+        let (conn, audio_dir) = setup("export");
+        let interview = interrupted(&conn, &audio_dir);
+        insert_as_uncertain(
+            &conn,
+            interview.id,
+            vec![crate::transcription::RawSegment {
+                start_ms: 65_000,
+                end_ms: 66_000,
+                text: "Texte récupéré".into(),
+                confidence: None,
+            }],
+        )
+        .unwrap();
+        db::interviews::update_status(&conn, interview.id, "transcribed", None).unwrap();
+
+        let detail = db::get_detail(&conn, interview.id).unwrap();
+        let bytes = crate::export::render(
+            "txt",
+            &detail,
+            &crate::export::ExportOptions {
+                show_timestamps: true,
+                use_cleaned_text: false,
+            },
+        )
+        .unwrap();
+        let output = String::from_utf8(bytes).unwrap();
+        assert!(output.contains("[01:05] Intervenant: Texte récupéré"));
         std::fs::remove_dir_all(audio_dir).ok();
     }
 }
