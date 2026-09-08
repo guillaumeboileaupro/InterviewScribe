@@ -36,29 +36,46 @@ cargo test --release --manifest-path src-tauri/Cargo.toml \
 | Source | `ami-es2002a-mix-headset`, fenetre 69–89 s |
 | SHA-256 fixture | `0b9d3c2cb5a59334ec783348afc1382515b27461f1ac12470cc513616b0daea4` |
 | Reference | 59 mots ; au moins 2,7 s de parole par locuteur A-D |
-| Segments / clusters | 6 / 4 |
-| WER | 0,0678 |
-| CER | 0,0500 |
-| DER sur tours de parole | 0,5148 |
-| DER naif sur regions de mots | 0,5200 |
+| Strategie Whisper | Greedy, `best_of = 5` |
+| Segments / clusters | 9 / 4 |
+| WER | 0,1186 |
+| CER | 0,0767 |
+| DER sur tours de parole | 0,7368 |
+| DER naif sur regions de mots | 0,7246 |
 | Parole manquee | 0 ms |
 | Fausse alarme | 2 790 ms |
-| Confusion de locuteur | 6 070 ms |
+| Confusion de locuteur | 9 890 ms |
 | Couverture `uncertain` | 0,0000 |
 | Doublons | 0,0000 |
+| Horodatages alignes | 54 mots sur 59 |
+| Derive maximale | 1 280 ms |
 | Seuil DER | <= 0,50 |
-| Duree du test | 190,73 s, hors compilation initiale |
-| Resultat | Echec explicite : DER depasse le seuil de 0,0148 |
+| Duree du test | 166,80 s, hors compilation initiale |
+| Resultat | Echec explicite : DER et derive depassent les seuils |
 
 Un premier extrait de 10 s a ete rejete comme non representatif : seulement
-deux clusters sur quatre et DER 0,9618. Le passage a 20 s a bien produit quatre
-clusters et fortement ameliore les mesures. La reference mot a mot a ensuite ete
+deux clusters sur quatre et DER 0,9618. La reference mot a mot a ensuite ete
 convertie en tours de parole en regroupant, pour un meme locuteur, les pauses de
 500 ms ou moins. Les deux DER sont publies pour rendre ce choix visible. Les
-6 070 ms de confusion montrent que le depassement restant vient principalement
+9 890 ms de confusion montrent que le depassement vient principalement
 des segments Whisper qui couvrent plusieurs tours de parole, alors que le pipeline
 attribue actuellement une seule empreinte et un seul locuteur a chaque segment.
-Le seuil reste volontairement inchange.
+La derive repose sur 54 mots identiques alignes par distance d'edition, avec des
+horodatages de mots repartis dans chaque segment Whisper. Le seuil reste
+volontairement inchange.
+
+### Variantes deterministes
+
+| Variante | Segments | Clusters | WER | CER | DER | Confusion | `uncertain` | Doublons | Resultat |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| Bruit | 8 | 3 | 0,1017 | 0,0600 | 0,5009 | 5 830 ms | 0,0000 | 0,0000 | Echec clusters/DER |
+| Tons musicaux | 9 | 4 | 0,1695 | 0,1100 | 0,7379 | 9 910 ms | 0,0000 | 0,0000 | Echec DER |
+| Chevauchement | 8 | 4 | 0,1356 | 0,0800 | 0,7641 | 10 360 ms | 0,0000 | 0,0000 | Echec DER/absence d'incertitude |
+
+La campagne est executee et reproductible, mais ces lignes ne constituent pas
+une validation qualite. Elles etablissent les regressions bloquantes a corriger :
+confusion sur les segments couvrant plusieurs voix, quatrieme cluster perdu sous
+bruit, absence d'etat incertain sur chevauchement et derive maximale trop elevee.
 
 Commande reproductible apres `pnpm corpus:prepare` :
 
@@ -73,7 +90,6 @@ cargo test --manifest-path src-tauri/Cargo.toml \
 
 ## Reste a qualifier
 
-- AMI quatre locuteurs : diagnostiquer le DER 0,5200 puis qualifier la derive ;
-- variantes deterministes bruit, tons musicaux et chevauchement ;
+- corriger les ecarts bloquants AMI listes ci-dessus ;
 - Windows et Android ;
 - davantage d'accents francophones.

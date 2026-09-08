@@ -137,12 +137,13 @@ E2E et leurs dependances restent hors de ce lot.
 - [x] 3.5 Implementer DER, confusion de locuteur et couverture `uncertain`.
 - [x] 3.6 Mesurer doublons et derive des horodatages aux frontieres.
 - [x] 3.7 Fixer des seuils initiaux documentes, puis faire echouer les regressions.
-- [ ] 3.8 Executer la qualification lourde manuellement ou la nuit, jamais sur
+- [x] 3.8 Executer la qualification lourde manuellement ou la nuit, jamais sur
   chaque commit.
   - [x] Test opt-in du clip francophone public, sans texte brut dans le rapport.
   - [x] Executer et archiver WER/CER Large v3 Turbo sur le clip francophone.
   - [x] Epingle et extrait localement les annotations AMI 1.6.2 de la fenetre.
-  - [ ] Executer AMI et les variantes pour DER, doublons et derive reels.
+  - [x] Executer AMI et les variantes pour DER, doublons et derive reels ; les
+        echecs DER, clusters, `uncertain` et derive restent des ecarts bloquants documentes.
 
 Critere de sortie : chaque mesure est reproductible depuis un manifeste epingle
 et ne depend d'aucune donnee sensible.
@@ -219,3 +220,4 @@ et ne depend d'aucune donnee sensible.
 | 2026-09-08 | 3.7 | Seuils initiaux WER/CER/DER/doublons/derive versionnes et depassements bloquants testes. |
 | 2026-09-08 | 3.8 (partiel) | Qualification Large v3 Turbo reelle : WER 0,0000, CER 0,0000, 149,15 s ; rapport sans contenu brut. |
 | 2026-09-08 | 3.8 (AMI) | Diagnostic : DER tours 0,5148 = 0 ms manque + 2 790 ms fausse alarme + 6 070 ms confusion ; limite segment Whisper mono-locuteur identifiee, seuil maintenu. |
+| 2026-09-08 | 3.8 | Campagne close sur Greedy : propre, bruit, musique et chevauchement executes ; derive propre 1 280 ms sur 54/59 mots, ecarts qualite conserves comme bloquants. |

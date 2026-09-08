@@ -360,7 +360,7 @@ mod tests {
             .join(" ");
         let wer = crate::evaluation::word_error_rate(&reference_text, &hypothesis_text).rate;
         let cer = crate::evaluation::character_error_rate(&reference_text, &hypothesis_text).rate;
-        let timed = segments
+        let hypothesis_timed = segments
             .iter()
             .map(|segment| crate::evaluation::TimedText {
                 start_ms: segment.start_ms,
@@ -368,12 +368,16 @@ mod tests {
                 text: segment.text.clone(),
             })
             .collect::<Vec<_>>();
-        let boundaries = crate::evaluation::boundary_metrics(&[], &timed);
-        let duplicate_rate =
-            boundaries.duplicate_count as f64 / timed.len().saturating_sub(1).max(1) as f64;
+        let (aligned_reference, aligned_hypothesis) =
+            align_ami_words(&reference.words, &hypothesis_timed);
+        let boundaries =
+            crate::evaluation::boundary_metrics(&aligned_reference, &aligned_hypothesis);
+        let duplicate_rate = boundaries.duplicate_count as f64
+            / hypothesis_timed.len().saturating_sub(1).max(1) as f64;
+        let max_timestamp_drift_ms = boundaries.max_drift_ms;
 
         println!(
-            "ami metrics: segments={}, clusters={}, wer={wer:.4}, cer={cer:.4}, der={:.4}, word_region_der={:.4}, missed_ms={}, false_alarm_ms={}, confusion_ms={}, uncertain={:.4}, duplicates={duplicate_rate:.4}",
+            "ami metrics: segments={}, clusters={}, wer={wer:.4}, cer={cer:.4}, der={:.4}, word_region_der={:.4}, missed_ms={}, false_alarm_ms={}, confusion_ms={}, uncertain={:.4}, duplicates={duplicate_rate:.4}, aligned_boundaries={}/{}, max_drift_ms={max_timestamp_drift_ms}",
             segments.len(),
             clusterer.speaker_count(),
             diarization.der,
@@ -382,6 +386,8 @@ mod tests {
             diarization.false_alarm_ms,
             diarization.speaker_confusion_ms,
             diarization.uncertain_coverage,
+            boundaries.compared_segments,
+            reference.words.len(),
         );
         assert!(!segments.is_empty(), "expected speech segments");
         assert_eq!(
@@ -395,9 +401,7 @@ mod tests {
                 cer,
                 der: diarization.der,
                 duplicate_rate,
-                // Drift requires word-aligned hypothesis timestamps; it is not
-                // fabricated from unrelated segment indexes in this runner.
-                max_timestamp_drift_ms: 0,
+                max_timestamp_drift_ms,
             },
             crate::evaluation::QualityThresholds {
                 max_wer: 0.45,
@@ -443,6 +447,78 @@ mod tests {
         }
         turns.sort_by_key(|turn| turn.start_ms);
         turns
+    }
+
+    #[cfg(not(target_os = "android"))]
+    fn align_ami_words(
+        words: &[AmiWord],
+        segments: &[crate::evaluation::TimedText],
+    ) -> (
+        Vec<crate::evaluation::TimedText>,
+        Vec<crate::evaluation::TimedText>,
+    ) {
+        let reference = words
+            .iter()
+            .map(|word| crate::evaluation::TimedText {
+                start_ms: word.start_ms,
+                end_ms: word.end_ms,
+                text: crate::evaluation::normalize_text(&word.text),
+            })
+            .filter(|word| !word.text.is_empty())
+            .collect::<Vec<_>>();
+        let mut hypothesis = Vec::new();
+        for segment in segments {
+            let tokens = crate::evaluation::normalize_text(&segment.text)
+                .split_whitespace()
+                .map(str::to_string)
+                .collect::<Vec<_>>();
+            let count = tokens.len().max(1) as i64;
+            let duration = segment.end_ms - segment.start_ms;
+            for (index, token) in tokens.into_iter().enumerate() {
+                hypothesis.push(crate::evaluation::TimedText {
+                    start_ms: segment.start_ms + duration * index as i64 / count,
+                    end_ms: segment.start_ms + duration * (index as i64 + 1) / count,
+                    text: token,
+                });
+            }
+        }
+        let mut costs = vec![vec![0usize; hypothesis.len() + 1]; reference.len() + 1];
+        for (i, row) in costs.iter_mut().enumerate() {
+            row[0] = i;
+        }
+        for j in 0..=hypothesis.len() {
+            costs[0][j] = j;
+        }
+        for i in 1..=reference.len() {
+            for j in 1..=hypothesis.len() {
+                let substitution = costs[i - 1][j - 1]
+                    + usize::from(reference[i - 1].text != hypothesis[j - 1].text);
+                costs[i][j] = substitution
+                    .min(costs[i - 1][j] + 1)
+                    .min(costs[i][j - 1] + 1);
+            }
+        }
+        let (mut i, mut j) = (reference.len(), hypothesis.len());
+        let (mut aligned_reference, mut aligned_hypothesis) = (Vec::new(), Vec::new());
+        while i > 0 && j > 0 {
+            if reference[i - 1].text == hypothesis[j - 1].text && costs[i][j] == costs[i - 1][j - 1]
+            {
+                aligned_reference.push(reference[i - 1].clone());
+                aligned_hypothesis.push(hypothesis[j - 1].clone());
+                i -= 1;
+                j -= 1;
+            } else if costs[i][j] == costs[i - 1][j] + 1 {
+                i -= 1;
+            } else if costs[i][j] == costs[i][j - 1] + 1 {
+                j -= 1;
+            } else {
+                i -= 1;
+                j -= 1;
+            }
+        }
+        aligned_reference.reverse();
+        aligned_hypothesis.reverse();
+        (aligned_reference, aligned_hypothesis)
     }
 
     #[cfg(not(target_os = "android"))]
@@ -542,6 +618,27 @@ mod tests {
         assert_eq!((turns[0].start_ms, turns[0].end_ms), (100, 800));
         assert_eq!(turns[1].speaker.as_deref(), Some("B"));
         assert_eq!((turns[2].start_ms, turns[2].end_ms), (1_400, 1_600));
+    }
+
+    #[cfg(not(target_os = "android"))]
+    #[test]
+    fn ami_word_alignment_ignores_insertions_without_shifting_timestamps() {
+        let words = vec![AmiWord {
+            speaker: "A".into(),
+            start_ms: 100,
+            end_ms: 300,
+            text: "hello".into(),
+        }];
+        let hypothesis = vec![crate::evaluation::TimedText {
+            start_ms: 0,
+            end_ms: 400,
+            text: "extra hello".into(),
+        }];
+        let (reference, aligned) = align_ami_words(&words, &hypothesis);
+        assert_eq!(reference.len(), 1);
+        assert_eq!(aligned.len(), 1);
+        assert_eq!(aligned[0].text, "hello");
+        assert_eq!((aligned[0].start_ms, aligned[0].end_ms), (200, 400));
     }
 
     /// Deterministic PRNG-based white noise, scaled to hit a target SNR against the
