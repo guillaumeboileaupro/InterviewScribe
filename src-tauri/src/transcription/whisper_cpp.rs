@@ -225,6 +225,211 @@ mod tests {
         );
     }
 
+    #[cfg(not(target_os = "android"))]
+    #[derive(serde::Deserialize)]
+    struct AmiReference {
+        words: Vec<AmiWord>,
+    }
+
+    #[cfg(not(target_os = "android"))]
+    #[derive(serde::Deserialize)]
+    struct AmiWord {
+        speaker: String,
+        start_ms: i64,
+        end_ms: i64,
+        text: String,
+    }
+
+    /// Full opt-in qualification of the desktop Whisper + WeSpeaker pipeline.
+    /// Inputs are generated from the pinned AMI source by `pnpm corpus:prepare`.
+    /// Only aggregate metrics are printed: neither transcript nor reference text.
+    #[cfg(not(target_os = "android"))]
+    #[test]
+    #[ignore]
+    fn ami_four_speaker_quality_metrics() {
+        let model_path = std::env::var("INTERVIEWSCRIBE_TEST_MODEL")
+            .expect("set INTERVIEWSCRIBE_TEST_MODEL to the local Whisper model");
+        let diarization_path = std::env::var("INTERVIEWSCRIBE_TEST_DIARIZATION_MODEL")
+            .expect("set INTERVIEWSCRIBE_TEST_DIARIZATION_MODEL to the local WeSpeaker model");
+        let audio_path = std::env::var("INTERVIEWSCRIBE_TEST_WAV")
+            .expect("set INTERVIEWSCRIBE_TEST_WAV to generated multi-clean-4.wav");
+        let reference_path = std::env::var("INTERVIEWSCRIBE_TEST_AMI_REFERENCE")
+            .expect("set INTERVIEWSCRIBE_TEST_AMI_REFERENCE to generated ami-reference.json");
+        let reference: AmiReference = serde_json::from_slice(
+            &std::fs::read(reference_path).expect("failed to read AMI reference"),
+        )
+        .expect("failed to parse AMI reference");
+        let pcm = crate::audio::decode::decode_to_mono_pcm16k(std::path::Path::new(&audio_path))
+            .expect("failed to decode AMI audio");
+        let transcriber = WhisperCppTranscriber::load(std::path::Path::new(&model_path))
+            .expect("failed to load Whisper model");
+        let segments = transcriber
+            .transcribe(&pcm, Some("en"))
+            .expect("failed to transcribe AMI audio");
+
+        let mut extractor =
+            crate::diarization::EmbeddingExtractor::load(std::path::Path::new(&diarization_path))
+                .expect("failed to load WeSpeaker model");
+        let mut clusterer = crate::diarization::Clusterer::new(Some(4));
+        let assignments = segments
+            .iter()
+            .map(|segment| {
+                let audio =
+                    crate::diarization::slice_pcm_ms(&pcm, segment.start_ms, segment.end_ms);
+                let embedding = extractor.extract(audio).expect("embedding failed");
+                clusterer.assign(&embedding)
+            })
+            .collect::<Vec<_>>();
+
+        let labels = best_ami_cluster_labels(&segments, &assignments, &reference.words);
+        let reference_regions = reference
+            .words
+            .iter()
+            .map(|word| crate::evaluation::SpeakerRegion {
+                start_ms: word.start_ms,
+                end_ms: word.end_ms,
+                speaker: Some(word.speaker.clone()),
+                uncertain: false,
+            })
+            .collect::<Vec<_>>();
+        let hypothesis_regions = segments
+            .iter()
+            .zip(&assignments)
+            .map(|(segment, assignment)| crate::evaluation::SpeakerRegion {
+                start_ms: segment.start_ms,
+                end_ms: segment.end_ms,
+                speaker: labels.get(assignment.speaker_index).cloned(),
+                uncertain: assignment.uncertain,
+            })
+            .collect::<Vec<_>>();
+        let diarization =
+            crate::evaluation::diarization_metrics(&reference_regions, &hypothesis_regions);
+        let reference_text = reference
+            .words
+            .iter()
+            .map(|word| word.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        let hypothesis_text = segments
+            .iter()
+            .map(|segment| segment.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        let wer = crate::evaluation::word_error_rate(&reference_text, &hypothesis_text).rate;
+        let cer = crate::evaluation::character_error_rate(&reference_text, &hypothesis_text).rate;
+        let timed = segments
+            .iter()
+            .map(|segment| crate::evaluation::TimedText {
+                start_ms: segment.start_ms,
+                end_ms: segment.end_ms,
+                text: segment.text.clone(),
+            })
+            .collect::<Vec<_>>();
+        let boundaries = crate::evaluation::boundary_metrics(&[], &timed);
+        let duplicate_rate =
+            boundaries.duplicate_count as f64 / timed.len().saturating_sub(1).max(1) as f64;
+
+        println!(
+            "ami metrics: segments={}, clusters={}, wer={wer:.4}, cer={cer:.4}, der={:.4}, missed_ms={}, false_alarm_ms={}, confusion_ms={}, uncertain={:.4}, duplicates={duplicate_rate:.4}",
+            segments.len(),
+            clusterer.speaker_count(),
+            diarization.der,
+            diarization.missed_speech_ms,
+            diarization.false_alarm_ms,
+            diarization.speaker_confusion_ms,
+            diarization.uncertain_coverage,
+        );
+        assert!(!segments.is_empty(), "expected speech segments");
+        assert_eq!(
+            clusterer.speaker_count(),
+            4,
+            "the four-speaker fixture must yield four clusters"
+        );
+        let violations = crate::evaluation::quality_threshold_violations(
+            crate::evaluation::QualitySnapshot {
+                wer,
+                cer,
+                der: diarization.der,
+                duplicate_rate,
+                // Drift requires word-aligned hypothesis timestamps; it is not
+                // fabricated from unrelated segment indexes in this runner.
+                max_timestamp_drift_ms: 0,
+            },
+            crate::evaluation::QualityThresholds {
+                max_wer: 0.45,
+                max_cer: 0.30,
+                max_der: 0.50,
+                max_duplicate_rate: 0.02,
+                max_timestamp_drift_ms: 500,
+            },
+        );
+        assert!(
+            violations.is_empty(),
+            "AMI quality thresholds exceeded: {violations:?}"
+        );
+    }
+
+    #[cfg(not(target_os = "android"))]
+    fn best_ami_cluster_labels(
+        segments: &[RawSegment],
+        assignments: &[crate::diarization::Assignment],
+        words: &[AmiWord],
+    ) -> Vec<String> {
+        let cluster_count = assignments
+            .iter()
+            .map(|assignment| assignment.speaker_index + 1)
+            .max()
+            .unwrap_or(0);
+        let speakers = ["A", "B", "C", "D"];
+        let mut overlap = vec![vec![0i64; speakers.len()]; cluster_count];
+        for (segment, assignment) in segments.iter().zip(assignments) {
+            for word in words {
+                let duration =
+                    segment.end_ms.min(word.end_ms) - segment.start_ms.max(word.start_ms);
+                if duration > 0 {
+                    if let Some(speaker_index) = speakers.iter().position(|s| *s == word.speaker) {
+                        overlap[assignment.speaker_index][speaker_index] += duration;
+                    }
+                }
+            }
+        }
+        let mut best_score = -1;
+        let mut best = Vec::new();
+        assign_ami_labels(&overlap, 0, &mut Vec::new(), &mut best_score, &mut best);
+        best.into_iter()
+            .map(|index| speakers[index].to_string())
+            .collect()
+    }
+
+    #[cfg(not(target_os = "android"))]
+    fn assign_ami_labels(
+        overlap: &[Vec<i64>],
+        cluster: usize,
+        current: &mut Vec<usize>,
+        best_score: &mut i64,
+        best: &mut Vec<usize>,
+    ) {
+        if cluster == overlap.len() {
+            let score = current
+                .iter()
+                .enumerate()
+                .map(|(index, speaker)| overlap[index][*speaker])
+                .sum();
+            if score > *best_score {
+                *best_score = score;
+                *best = current.clone();
+            }
+            return;
+        }
+        for speaker in 0..4 {
+            if !current.contains(&speaker) {
+                current.push(speaker);
+                assign_ami_labels(overlap, cluster + 1, current, best_score, best);
+                current.pop();
+            }
+        }
+    }
+
     /// Deterministic PRNG-based white noise, scaled to hit a target SNR against the
     /// given signal. No external `rand` dependency needed for a test-only helper.
     #[cfg(test)]

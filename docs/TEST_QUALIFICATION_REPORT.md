@@ -27,9 +27,44 @@ cargo test --release --manifest-path src-tauri/Cargo.toml \
   whisper_public_french_quality_thresholds -- --ignored --nocapture
 ```
 
+## Campagne 2026-09-08 — AMI quatre locuteurs
+
+| Champ | Valeur |
+| --- | --- |
+| Plateforme | Linux x86_64, execution locale |
+| Modeles | Whisper Large v3 Turbo Q5_0 et WeSpeaker CAM++ fournis avec l'application |
+| Source | `ami-es2002a-mix-headset`, fenetre 69–89 s |
+| SHA-256 fixture | `0b9d3c2cb5a59334ec783348afc1382515b27461f1ac12470cc513616b0daea4` |
+| Reference | 59 mots ; au moins 2,7 s de parole par locuteur A-D |
+| Segments / clusters | 6 / 4 |
+| WER | 0,0678 |
+| CER | 0,0500 |
+| DER | 0,5200 |
+| Couverture `uncertain` | 0,0000 |
+| Doublons | 0,0000 |
+| Seuil DER | <= 0,50 |
+| Duree du test | 190,73 s, hors compilation initiale |
+| Resultat | Echec explicite : DER depasse le seuil de 0,0200 |
+
+Un premier extrait de 10 s a ete rejete comme non representatif : seulement
+deux clusters sur quatre et DER 0,9618. Le passage a 20 s a bien produit quatre
+clusters et fortement ameliore les mesures, mais le seuil DER reste volontairement
+inchange tant que la cause des 2 points de depassement n'est pas etablie.
+
+Commande reproductible apres `pnpm corpus:prepare` :
+
+```bash
+INTERVIEWSCRIBE_TEST_MODEL=/chemin/ggml-large-v3-turbo-q5_0.bin \
+INTERVIEWSCRIBE_TEST_DIARIZATION_MODEL=/chemin/wespeaker_en_voxceleb_CAM++.onnx \
+INTERVIEWSCRIBE_TEST_WAV=tests/corpus/generated/multi-clean-4.wav \
+INTERVIEWSCRIBE_TEST_AMI_REFERENCE=tests/corpus/generated/ami-reference.json \
+cargo test --manifest-path src-tauri/Cargo.toml \
+  ami_four_speaker_quality_metrics -- --ignored --nocapture
+```
+
 ## Reste a qualifier
 
-- AMI quatre locuteurs : DER, confusion, couverture `uncertain` et derive ;
+- AMI quatre locuteurs : diagnostiquer le DER 0,5200 puis qualifier la derive ;
 - variantes deterministes bruit, tons musicaux et chevauchement ;
 - Windows et Android ;
 - davantage d'accents francophones.
