@@ -118,9 +118,10 @@ Pris par Codex pendant que Claude execute la section 2 E2E desktop. Les fichiers
 E2E et leurs dependances restent hors de ce lot.
 
 - [x] 3.1 Definir le manifeste : URL, licence, SHA-256, langue, locuteurs et cas.
-- [ ] 3.2 Selectionner des extraits redistribuables mono-locuteur et 2 a 5 voix.
+- [x] 3.2 Selectionner des extraits redistribuables mono-locuteur et 2 a 5 voix.
   - [x] Source officielle AMI a 4 voix, CC BY 4.0, epinglee par SHA-256.
-  - [ ] Clips francophones mono et multi-voix a epingler apres acces Common Voice.
+  - [x] Clip francophone belge mono, CC BY-SA 4.0, texte attendu et SHA-256 epingles.
+  - [ ] Elargir ulterieurement les accents et le multi-voix francophone via Common Voice.
 - [x] 3.3 Ajouter silence, bruit, musique et chevauchement, sans donnee privee.
 - [x] 3.4 Implementer normalisation texte et calcul WER/CER.
 - [x] 3.5 Implementer DER, confusion de locuteur et couverture `uncertain`.
@@ -199,3 +200,4 @@ et ne depend d'aucune donnee sensible.
 | 2026-09-08 | 3.6 | Doublons chevauchants et derive moyenne/maximale des horodatages mesures et testes. |
 | 2026-09-08 | 3.1 | Manifeste sans audio prive, source AMI officielle/licence/taille/SHA-256 et validateur ajoutes. |
 | 2026-09-08 | 3.3 | Generateur deterministe silence/bruit/tons musicaux/chevauchement, sorties WAV ignorees par Git. |
+| 2026-09-08 | 3.2 | Sources mono francophone et AMI quatre voix selectionnees, attribuees et epinglees. |

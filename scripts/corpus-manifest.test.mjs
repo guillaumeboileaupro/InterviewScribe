@@ -38,4 +38,13 @@ test("the manifest tracks every required acoustic case", async () => {
   )) {
     assert.match(generated.sha256, /^[a-f0-9]{64}$/);
   }
+  const sourceIds = new Set(manifest.sources.map((source) => source.id));
+  for (const selected of manifest.planned_cases.filter(
+    (entry) => entry.state === "selected",
+  )) {
+    assert.ok(
+      sourceIds.has(selected.source),
+      `unknown selected source: ${selected.source}`,
+    );
+  }
 });

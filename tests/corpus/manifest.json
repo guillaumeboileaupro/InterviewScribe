@@ -20,13 +20,30 @@
       "speaker_count": 4,
       "redistributable": true,
       "notes": "Official mixed-headset WAV; participant mapping and 16 kHz signal are documented by AMI."
+    },
+    {
+      "id": "wikimedia-fr-chat-gorge",
+      "corpus": "Wikimedia Commons pronunciation audio",
+      "version": "file revision 2015-03-01",
+      "url": "https://commons.wikimedia.org/wiki/Special:Redirect/file/Fr-avoir%20un%20chat%20dans%20la%20gorge.ogg",
+      "dataset_page": "https://commons.wikimedia.org/wiki/File:Fr-avoir_un_chat_dans_la_gorge.ogg",
+      "license": "CC-BY-SA-4.0",
+      "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "sha256": "bf667abb1a8811ef3ed96f8838abc895122f717242b3679f9efb91394f3fe5fd",
+      "size_bytes": 22651,
+      "language": "fr-BE",
+      "speaker_count": 1,
+      "redistributable": true,
+      "reference_text": "avoir un chat dans la gorge",
+      "attribution": "Jeuwre, Wikimedia Commons",
+      "notes": "Native Belgian French male voice; original Ogg remains outside Git."
     }
   ],
   "planned_cases": [
     {
       "id": "single-clean-fr",
-      "source": "common-voice-fr",
-      "state": "pending-access"
+      "source": "wikimedia-fr-chat-gorge",
+      "state": "selected"
     },
     {
       "id": "multi-clean-4",
