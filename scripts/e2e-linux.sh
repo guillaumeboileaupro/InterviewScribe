@@ -20,7 +20,14 @@ fi
 PROFILE_DIR=$(mktemp -d)
 DRIVER_PID=""
 cleanup() {
-  [ -n "$DRIVER_PID" ] && kill "$DRIVER_PID" 2>/dev/null || true
+  # `setsid` below makes tauri-driver a process group leader, so the app
+  # process it spawns as a child inherits that group - killing the group
+  # (negative PID) takes both down. Plain `kill $DRIVER_PID` was found to
+  # leave the spawned app running as an orphan indefinitely after this
+  # script exits, corrupting later runs' timing/resource measurements.
+  if [ -n "$DRIVER_PID" ]; then
+    kill -- -"$DRIVER_PID" 2>/dev/null || true
+  fi
   rm -rf "$PROFILE_DIR"
 }
 trap cleanup EXIT
@@ -30,7 +37,7 @@ export XDG_CONFIG_HOME="$PROFILE_DIR/config"
 export XDG_CACHE_HOME="$PROFILE_DIR/cache"
 mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME"
 
-tauri-driver --port 4444 &
+setsid tauri-driver --port 4444 &
 DRIVER_PID=$!
 
 for _ in $(seq 1 50); do
@@ -41,4 +48,4 @@ for _ in $(seq 1 50); do
   sleep 0.2
 done
 
-pnpm exec wdio run e2e/wdio.conf.mjs
+pnpm exec wdio run e2e/wdio.conf.mjs "$@"

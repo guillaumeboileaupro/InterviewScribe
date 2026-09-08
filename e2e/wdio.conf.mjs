@@ -31,8 +31,13 @@ export const config = {
   logLevel: "warn",
   framework: "mocha",
   reporters: ["spec"],
+  maxInstancesPerCapability: 1,
   mochaOpts: {
     ui: "bdd",
-    timeout: 60000,
+    // The workflow spec waits for a real Whisper transcription to finish
+    // (up to 180s observed - see e2e/specs/workflow.e2e.mjs); this must
+    // stay above that or mocha kills the test with a generic "Timeout"
+    // before the more descriptive per-step waitUntil message can surface.
+    timeout: 300000,
   },
 };
