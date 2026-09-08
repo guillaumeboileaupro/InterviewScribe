@@ -69,9 +69,21 @@ fichiers: cette section ne touche pas `recovery.rs` ni son chemin de
 recuperation. Coordination asynchrone via ce document, aucun canal direct
 entre les deux agents.
 
-- [ ] 2.1 Choisir et documenter le pilote compatible Tauri 2/WebDriver.
-- [ ] 2.2 Ajouter un profil de donnees temporaire et des fixtures synthetiques.
-- [ ] 2.3 Automatiser lancement, bibliotheque et navigation sous Linux.
+- [x] 2.1 Choisir et documenter le pilote compatible Tauri 2/WebDriver : `tauri-driver`
+  (crate officiel) au-dessus de `WebKitWebDriver` sous Linux, pilote par
+  WebdriverIO/Mocha. Config `e2e/wdio.conf.mjs`, suite `e2e/specs/*.e2e.mjs`.
+- [x] 2.2 Profil temporaire : `scripts/e2e-linux.sh` isole chaque execution dans
+  un `XDG_DATA_HOME`/`XDG_CONFIG_HOME`/`XDG_CACHE_HOME` jetable (`mktemp -d`),
+  jamais les vraies donnees utilisateur. Pas encore de fixtures synthetiques
+  au-dela de l'etat vide par defaut.
+- [x] 2.3 `e2e/specs/smoke.e2e.mjs` pilote reellement le binaire installe
+  (`/usr/bin/interviewscribe`, pas le binaire brut non installe - la
+  resolution des ressources bundlees differe entre les deux, verifie en
+  pratique) : lancement, navigation bibliotheque/Reglages/Preparation,
+  verification du modele integre reellement affiche (pas simule) et de la
+  liste des microphones reellement filtree (re-valide en conditions reelles
+  le correctif `capture/device.rs`). 3 tests, tous verts en conditions
+  reelles (`pnpm test:e2e:linux`).
 - [ ] 2.4 Automatiser import, edition, nettoyage, locuteurs, export et suppression.
 - [ ] 2.5 Ajouter le job E2E Linux a la CI avec artefacts de diagnostic sur echec.
 - [ ] 2.6 Porter la meme suite sur `windows-latest`.
@@ -159,3 +171,4 @@ et ne depend d'aucune donnee sensible.
 | 2026-09-08 | 1.7 | Actions UI `Recuperer`/`Conserver en l'etat`, chargement et erreur implementes. |
 | 2026-09-08 | 1.8 | Matrice automatique zero/partiel/corrompu/silence/repetition/export terminee. |
 | 2026-09-08 | 3.4 | Normalisation Unicode reproductible et calculs WER/CER implementes et testes. |
+| 2026-09-08 | 2.1-2.3 | Harnais E2E reel (tauri-driver/WebKitWebDriver/WebdriverIO) pilotant le binaire installe ; 3 tests verts en conditions reelles. |
