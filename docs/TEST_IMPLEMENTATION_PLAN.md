@@ -140,7 +140,8 @@ E2E et leurs dependances restent hors de ce lot.
 - [ ] 3.8 Executer la qualification lourde manuellement ou la nuit, jamais sur
   chaque commit.
   - [x] Test opt-in du clip francophone public, sans texte brut dans le rapport.
-  - [ ] Executer et archiver les metriques agregees Large v3 Turbo.
+  - [x] Executer et archiver WER/CER Large v3 Turbo sur le clip francophone.
+  - [ ] Executer AMI et les variantes pour DER, doublons et derive reels.
 
 Critere de sortie : chaque mesure est reproductible depuis un manifeste epingle
 et ne depend d'aucune donnee sensible.
@@ -215,3 +216,4 @@ et ne depend d'aucune donnee sensible.
 | 2026-09-08 | 3.3 | Generateur deterministe silence/bruit/tons musicaux/chevauchement, sorties WAV ignorees par Git. |
 | 2026-09-08 | 3.2 | Sources mono francophone et AMI quatre voix selectionnees, attribuees et epinglees. |
 | 2026-09-08 | 3.7 | Seuils initiaux WER/CER/DER/doublons/derive versionnes et depassements bloquants testes. |
+| 2026-09-08 | 3.8 (partiel) | Qualification Large v3 Turbo reelle : WER 0,0000, CER 0,0000, 149,15 s ; rapport sans contenu brut. |
