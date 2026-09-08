@@ -5,6 +5,7 @@ mod db;
 mod diagnostics;
 mod diarization;
 mod error;
+pub mod evaluation;
 mod export;
 mod recovery;
 mod transcription;

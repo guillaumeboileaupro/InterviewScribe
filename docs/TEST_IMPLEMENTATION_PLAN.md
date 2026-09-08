@@ -80,12 +80,15 @@ entre les deux agents.
 Critere de sortie : la meme suite pilote des applications Tauri construites sur
 Linux et Windows, et non un frontend simule seul.
 
-## 3. Corpus audio public et mesures
+## 3. Corpus audio public et mesures — EN COURS (Codex)
+
+Pris par Codex pendant que Claude execute la section 2 E2E desktop. Les fichiers
+E2E et leurs dependances restent hors de ce lot.
 
 - [ ] 3.1 Definir le manifeste : URL, licence, SHA-256, langue, locuteurs et cas.
 - [ ] 3.2 Selectionner des extraits redistribuables mono-locuteur et 2 a 5 voix.
 - [ ] 3.3 Ajouter silence, bruit, musique et chevauchement, sans donnee privee.
-- [ ] 3.4 Implementer normalisation texte et calcul WER/CER.
+- [x] 3.4 Implementer normalisation texte et calcul WER/CER.
 - [ ] 3.5 Implementer DER, confusion de locuteur et couverture `uncertain`.
 - [ ] 3.6 Mesurer doublons et derive des horodatages aux frontieres.
 - [ ] 3.7 Fixer des seuils initiaux documentes, puis faire echouer les regressions.
@@ -155,3 +158,4 @@ et ne depend d'aucune donnee sensible.
 | 2026-09-08 | 1.6 | Segments recuperes sans locuteur invente et marques `uncertain` jusqu'a validation humaine. |
 | 2026-09-08 | 1.7 | Actions UI `Recuperer`/`Conserver en l'etat`, chargement et erreur implementes. |
 | 2026-09-08 | 1.8 | Matrice automatique zero/partiel/corrompu/silence/repetition/export terminee. |
+| 2026-09-08 | 3.4 | Normalisation Unicode reproductible et calculs WER/CER implementes et testes. |
