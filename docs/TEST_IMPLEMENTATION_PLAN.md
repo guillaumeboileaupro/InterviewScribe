@@ -52,7 +52,7 @@ supprimer les segments bruts deja stabilises et sans creer de doublons.
   - [x] Cabler ces regles a la commande Whisper de recuperation.
 - [x] 1.6 Reconstituer une attribution de locuteur prudente : attribution
   incertaine plutot que fusion forcee si l'identite ne peut pas etre reliee.
-- [ ] 1.7 Ajouter l'action UI `Recuperer`, ses etats occupes/erreur et une option
+- [x] 1.7 Ajouter l'action UI `Recuperer`, ses etats occupes/erreur et une option
   `Conserver en l'etat`.
 - [ ] 1.8 Tester : aucun segment, segments partiels, WAV absent/corrompu, silence
   final, interruption repetee et export apres recuperation.
@@ -62,7 +62,12 @@ supprimer les segments bruts deja stabilises et sans creer de doublons.
 Critere de sortie : aucune perte de donnees, aucun `raw_text` modifie, aucun
 doublon aux frontieres et erreur locale explicite si le WAV est inutilisable.
 
-## 2. E2E desktop automatise
+## 2. E2E desktop automatise — EN COURS (Claude)
+
+Pris en parallele de la section 1 (Codex) pour eviter tout chevauchement de
+fichiers: cette section ne touche pas `recovery.rs` ni son chemin de
+recuperation. Coordination asynchrone via ce document, aucun canal direct
+entre les deux agents.
 
 - [ ] 2.1 Choisir et documenter le pilote compatible Tauri 2/WebDriver.
 - [ ] 2.2 Ajouter un profil de donnees temporaire et des fixtures synthetiques.
@@ -148,3 +153,4 @@ et ne depend d'aucune donnee sensible.
 | 2026-09-08 | 1.5 (partiel) | Decoupe PCM, recalage temporel et garde anti-doublon implementes comme regles pures testees. |
 | 2026-09-08 | 1.5 | Commande Whisper de reprise cablee au suffixe audio et persistance additive implementee. |
 | 2026-09-08 | 1.6 | Segments recuperes sans locuteur invente et marques `uncertain` jusqu'a validation humaine. |
+| 2026-09-08 | 1.7 | Actions UI `Recuperer`/`Conserver en l'etat`, chargement et erreur implementes. |
