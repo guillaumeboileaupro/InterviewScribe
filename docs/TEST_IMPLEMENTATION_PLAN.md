@@ -105,9 +105,19 @@ entre les deux agents.
   avec un environnement propre (une piste: la meme suite sous CI, machine
   dediee, pourrait ne pas reproduire le probleme), soit apres avoir ajoute
   des reperes `diagnostics::log` dans le pipeline de transcription.
-- [ ] 2.5 Ajouter le job E2E Linux a la CI avec artefacts de diagnostic sur echec.
+- [x] 2.5 Job `e2e-linux` ajoute a `.github/workflows/ci.yml` : construit le vrai
+  `.deb`, l'installe, execute la suite sous `xvfb-run` (xdotool fonctionne
+  pareil sous un serveur X virtuel), upload le journal `tauri-driver` en
+  artefact seulement si le job echoue. Execute reellement pour verifier
+  (run `34254415903`) : les 3 jobs (`web`, `rust`, `e2e-linux`) passent, les
+  4 tests reels verts en ~1 min sur runner propre - la question ouverte en
+  2.4 (lenteur de transcription observee sur la machine de developpement)
+  reste non tranchee ici puisque ce test precis est toujours `it.skip`.
 - [ ] 2.6 Porter la meme suite sur `windows-latest`.
-- [ ] 2.7 Verifier qu'aucun audio/transcript n'apparait dans les artefacts CI.
+- [x] 2.7 L'artefact de diagnostic uploade (`tauri-driver.log`) ne contient que
+  des messages de cycle de vie du processus - jamais l'audio, la base
+  SQLite ou un texte transcrit (verifie par construction : seul ce fichier
+  est cible par `actions/upload-artifact`, pas le profil XDG temporaire).
 
 Critere de sortie : la meme suite pilote des applications Tauri construites sur
 Linux et Windows, et non un frontend simule seul.
@@ -196,6 +206,7 @@ et ne depend d'aucune donnee sensible.
 | 2026-09-08 | 3.4 | Normalisation Unicode reproductible et calculs WER/CER implementes et testes. |
 | 2026-09-08 | 2.1-2.3 | Harnais E2E reel (tauri-driver/WebKitWebDriver/WebdriverIO) pilotant le binaire installe ; 3 tests verts en conditions reelles. |
 | 2026-09-08 | 2.4 (partiel) | Import automatise via boite de dialogue native reelle (xdotool) ; declenchement de la transcription verifie. Lenteur/blocage reel non resolu au-dela de ce point, documente honnetement plutot que masque ; suite complementaire ecrite mais `it.skip`. |
+| 2026-09-08 | 2.5, 2.7 | Job CI `e2e-linux` ajoute et verifie par une execution reelle (run 34254415903, 3 jobs verts) ; artefact de diagnostic limite au journal `tauri-driver` par construction. |
 | 2026-09-08 | 3.5 | DER decompose, confusion locuteur et couverture `uncertain` implementes et testes. |
 | 2026-09-08 | 3.6 | Doublons chevauchants et derive moyenne/maximale des horodatages mesures et testes. |
 | 2026-09-08 | 3.1 | Manifeste sans audio prive, source AMI officielle/licence/taille/SHA-256 et validateur ajoutes. |
