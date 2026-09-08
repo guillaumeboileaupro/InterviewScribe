@@ -151,7 +151,7 @@ et ne depend d'aucune donnee sensible.
 ## 4. Audio et erreurs d'integration — EN COURS (Codex)
 
 - [x] 4.1 Ajouter de petites fixtures WAV, MP3, M4A, FLAC, OGG et AAC autorisees.
-- [ ] 4.2 Tester mono, stereo, frequences d'echantillonnage et durees extremes.
+- [x] 4.2 Tester mono, stereo, frequences d'echantillonnage et durees extremes.
 - [ ] 4.3 Tester fichiers tronques, vides, extension trompeuse et permission refusee.
 - [ ] 4.4 Simuler disque plein/ecriture et verifier la propagation sans perte.
 - [ ] 4.5 Tester erreur d'un segment sans perte du reste de l'entretien.
@@ -222,3 +222,4 @@ et ne depend d'aucune donnee sensible.
 | 2026-09-08 | 3.8 (AMI) | Diagnostic : DER tours 0,5148 = 0 ms manque + 2 790 ms fausse alarme + 6 070 ms confusion ; limite segment Whisper mono-locuteur identifiee, seuil maintenu. |
 | 2026-09-08 | 3.8 | Campagne close sur Greedy : propre, bruit, musique et chevauchement executes ; derive propre 1 280 ms sur 54/59 mots, ecarts qualite conserves comme bloquants. |
 | 2026-09-08 | 4.1 | Six fixtures synthetiques 440 Hz generees localement et testees par le decodeur reel ; aucune voix ni donnee privee. |
+| 2026-09-08 | 4.2 | Matrice WAV 8/16/44,1/48 kHz, mono/stereo et 10 ms a 60 s normalisee en mono 16 kHz. |

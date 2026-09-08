@@ -227,4 +227,38 @@ mod tests {
             assert!(peak > 0.01, "decoded {extension} fixture is silent");
         }
     }
+
+    #[test]
+    fn normalizes_sample_rate_channel_count_and_duration_extremes() {
+        for (name, source_rate, channels, duration_ms) in [
+            ("short-mono-8k.wav", 8_000, 1, 10),
+            ("mono-16k.wav", 16_000, 1, 250),
+            ("stereo-44100.wav", 44_100, 2, 250),
+            ("long-stereo-48k.wav", 48_000, 2, 60_000),
+        ] {
+            let path = temp_path(name);
+            let frame_count = source_rate as usize * duration_ms as usize / 1_000;
+            let mono = sine_wave(frame_count, 440.0, source_rate);
+            let samples = if channels == 1 {
+                mono
+            } else {
+                mono.into_iter()
+                    .flat_map(|sample| [sample, sample])
+                    .collect()
+            };
+            write_test_wav(&path, source_rate, channels, &samples);
+
+            let pcm = decode_to_mono_pcm16k(&path).unwrap_or_else(|error| {
+                panic!("failed matrix case {name}: {error}");
+            });
+            let expected = WHISPER_SAMPLE_RATE as usize * duration_ms as usize / 1_000;
+            let tolerance = (WHISPER_SAMPLE_RATE as usize / 100).max(1);
+            assert!(
+                pcm.len().abs_diff(expected) <= tolerance,
+                "{name}: decoded {} samples, expected about {expected}",
+                pcm.len()
+            );
+            std::fs::remove_file(&path).ok();
+        }
+    }
 }
