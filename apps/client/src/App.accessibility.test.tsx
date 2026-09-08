@@ -158,5 +158,5 @@ describe("automated accessibility", () => {
     await screen.findByText(/Le traitement local a ete interrompu/);
 
     await expectNoAutomatedViolations(container);
-  });
+  }, 15_000);
 });

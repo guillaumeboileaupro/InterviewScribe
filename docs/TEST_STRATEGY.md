@@ -72,7 +72,7 @@ de `cargo test` normal et leur execution doit etre rapportee separement.
 | --- | --- | --- | --- | --- | --- |
 | TXT-01 | `segment.raw_text` reste immuable | Unit + integration DB | Toutes | Automatise | Test transversal DB: nettoyage, edition, fusion, exports brut/nettoye et annulation. |
 | TXT-02 | Nettoyage reversible sans changement silencieux du sens | Unit + fonctionnel | Toutes | Automatise partiel | Couverture Rust et UI; enrichir le corpus de formulations ou les hesitations sont signifiantes. |
-| TXT-03 | Horodatages conserves lorsqu'ils sont masques | Unit + fonctionnel | Toutes | Automatise partiel | Masquage UI teste; ajouter persistance/export apres bascule. |
+| TXT-03 | Horodatages conserves lorsqu'ils sont masques | Unit + fonctionnel | Toutes | Automatise | Masquage sur entretien persiste teste: texte conserve et option `showTimestamps: false` transmise a l'export; JSON/SRT/VTT conservent leurs horodatages par contrat backend. |
 | SPK-01 | Aucun nom de locuteur invente | Unit + fonctionnel | Toutes | Automatise | Tests Rust et UI de renommage. |
 | SPK-02 | Fusion, reattribution et incertitude sont explicites | Unit + fonctionnel | Desktop | Automatise | Clustering synthetique et parcours UI couverts. |
 | SPK-03 | Discussion publique de 2 a 5 personnes | Qualification audio | Desktop | Planifie | Corpus multi-locuteurs non prive absent. |

@@ -1114,6 +1114,89 @@ describe("App", () => {
     );
     expect(await screen.findByText("incertain")).toBeInTheDocument();
   });
+
+  it("hides persisted timestamps without altering text and exports that choice", async () => {
+    let exportArguments: unknown;
+    mockIPC((cmd, args) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten" || cmd === "client_log") return null;
+      if (cmd === "list_interviews")
+        return [
+          {
+            id: 12,
+            title: "Entretien horodate",
+            language: "fr",
+            mode: "posteriori",
+            audio_path: "/audio/12.wav",
+            status: "transcribed",
+            error_message: null,
+            created_at: "0",
+            updated_at: "0",
+          },
+        ];
+      if (cmd === "get_interview")
+        return {
+          interview: {
+            id: 12,
+            title: "Entretien horodate",
+            language: "fr",
+            mode: "posteriori",
+            audio_path: "/audio/12.wav",
+            status: "transcribed",
+            error_message: null,
+            created_at: "0",
+            updated_at: "0",
+          },
+          speakers: [],
+          segments: [
+            {
+              id: 1,
+              interview_id: 12,
+              speaker_id: null,
+              start_ms: 65_000,
+              end_ms: 66_000,
+              raw_text: "Texte brut conserve",
+              current_text: "Texte brut conserve",
+              confidence: 0.9,
+              status: "raw",
+            },
+          ],
+        };
+      if (cmd === "check_doc_export_available") return false;
+      if (cmd === "plugin:dialog|save") return "/tmp/entretien.txt";
+      if (cmd === "export_interview") {
+        exportArguments = args;
+        return null;
+      }
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+
+    render(<App />);
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Entretien horodate — transcribed",
+      }),
+    );
+    expect(await screen.findByText("01:05")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Horodatages" }));
+
+    expect(screen.queryByText("01:05")).not.toBeInTheDocument();
+    expect(screen.getByText("Texte brut conserve")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Exporter en TXT" }));
+
+    await waitFor(() =>
+      expect(exportArguments).toEqual(
+        expect.objectContaining({
+          interviewId: 12,
+          format: "txt",
+          showTimestamps: false,
+          useCleanedText: false,
+          destinationPath: "/tmp/entretien.txt",
+        }),
+      ),
+    );
+    expect(screen.getByText("Texte brut conserve")).toBeInTheDocument();
+  });
 });
 
 describe("model prerequisites", () => {
