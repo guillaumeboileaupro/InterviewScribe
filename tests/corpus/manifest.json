@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "policy": {
+    "committed_audio": false,
+    "generated_directory": "tests/corpus/generated",
+    "contains_private_data": false
+  },
+  "sources": [
+    {
+      "id": "ami-es2002a-mix-headset",
+      "corpus": "AMI Meeting Corpus",
+      "version": "ES2002a",
+      "url": "https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/ES2002a/audio/ES2002a.Mix-Headset.wav",
+      "dataset_page": "https://groups.inf.ed.ac.uk/ami/corpus/",
+      "license": "CC-BY-4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "sha256": "9c76866990fcc8b84006dc32d273ad99df439090b748ebe72103bb78c3216ee7",
+      "size_bytes": 40724524,
+      "language": "en",
+      "speaker_count": 4,
+      "redistributable": true,
+      "notes": "Official mixed-headset WAV; participant mapping and 16 kHz signal are documented by AMI."
+    }
+  ],
+  "planned_cases": [
+    {
+      "id": "single-clean-fr",
+      "source": "common-voice-fr",
+      "state": "pending-access"
+    },
+    {
+      "id": "multi-clean-4",
+      "source": "ami-es2002a-mix-headset",
+      "state": "selected"
+    },
+    { "id": "silence", "source": "synthetic", "state": "pending-generation" },
+    {
+      "id": "noise",
+      "source": "synthetic-deterministic",
+      "state": "pending-generation"
+    },
+    {
+      "id": "music",
+      "source": "synthetic-tones",
+      "state": "pending-generation"
+    },
+    {
+      "id": "overlap",
+      "source": "ami-derived-mix",
+      "state": "pending-generation"
+    }
+  ]
+}

@@ -20,6 +20,7 @@
     "models:verify": "node scripts/prepare-model.mjs",
     "test:packaging": "node --test scripts/prepare-model.test.mjs",
     "test:privacy": "node --test scripts/privacy.test.mjs",
+    "test:corpus-manifest": "node --test scripts/corpus-manifest.test.mjs",
     "test:e2e:linux": "bash scripts/e2e-linux.sh"
   },
   "dependencies": {

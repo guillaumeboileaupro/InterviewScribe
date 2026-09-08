@@ -117,8 +117,10 @@ Linux et Windows, et non un frontend simule seul.
 Pris par Codex pendant que Claude execute la section 2 E2E desktop. Les fichiers
 E2E et leurs dependances restent hors de ce lot.
 
-- [ ] 3.1 Definir le manifeste : URL, licence, SHA-256, langue, locuteurs et cas.
+- [x] 3.1 Definir le manifeste : URL, licence, SHA-256, langue, locuteurs et cas.
 - [ ] 3.2 Selectionner des extraits redistribuables mono-locuteur et 2 a 5 voix.
+  - [x] Source officielle AMI a 4 voix, CC BY 4.0, epinglee par SHA-256.
+  - [ ] Clips francophones mono et multi-voix a epingler apres acces Common Voice.
 - [ ] 3.3 Ajouter silence, bruit, musique et chevauchement, sans donnee privee.
 - [x] 3.4 Implementer normalisation texte et calcul WER/CER.
 - [x] 3.5 Implementer DER, confusion de locuteur et couverture `uncertain`.
@@ -195,3 +197,4 @@ et ne depend d'aucune donnee sensible.
 | 2026-09-08 | 2.4 (partiel) | Import automatise via boite de dialogue native reelle (xdotool) ; declenchement de la transcription verifie. Lenteur/blocage reel non resolu au-dela de ce point, documente honnetement plutot que masque ; suite complementaire ecrite mais `it.skip`. |
 | 2026-09-08 | 3.5 | DER decompose, confusion locuteur et couverture `uncertain` implementes et testes. |
 | 2026-09-08 | 3.6 | Doublons chevauchants et derive moyenne/maximale des horodatages mesures et testes. |
+| 2026-09-08 | 3.1 | Manifeste sans audio prive, source AMI officielle/licence/taille/SHA-256 et validateur ajoutes. |
