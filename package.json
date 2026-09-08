@@ -1,7 +1,7 @@
 {
   "name": "interviewscribe",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "packageManager": "pnpm@10.15.1",
   "type": "module",
   "scripts": {
@@ -45,6 +45,7 @@
     "@wdio/local-runner": "^9.31.7",
     "@wdio/mocha-framework": "^9.31.7",
     "@wdio/spec-reporter": "^9.31.2",
+    "@wdio/tauri-service": "^1.4.0",
     "axe-core": "^4.13.0",
     "eslint": "^10.10.0",
     "eslint-plugin-react-hooks": "^7.1.1",

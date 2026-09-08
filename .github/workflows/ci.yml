@@ -40,10 +40,12 @@ jobs:
       - run: cargo test --manifest-path src-tauri/Cargo.toml
 
   # Real E2E (docs/TEST_IMPLEMENTATION_PLAN.md item 2.5): drives the actual
-  # installed application through tauri-driver/WebKitWebDriver, never a
-  # simulated frontend - see e2e/. Runs under Xvfb since this runner has no
-  # real display; xdotool (native file dialog automation) works the same
-  # way under a virtual X server as a real one.
+  # installed application through @wdio/tauri-service's embedded WebDriver
+  # provider (tauri-plugin-wdio-webdriver, only compiled in under the
+  # `wdio-e2e` feature - never in a real build), never a simulated frontend -
+  # see e2e/. Runs under Xvfb since this runner has no real display; xdotool
+  # (native file dialog automation) works the same way under a virtual X
+  # server as a real one.
   e2e-linux:
     runs-on: ubuntu-22.04
     steps:
@@ -55,32 +57,21 @@ jobs:
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
       - name: Install Tauri and E2E system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf cmake clang libasound2-dev webkit2gtk-driver xdotool xvfb
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf cmake clang libasound2-dev xdotool xvfb
       - run: pnpm install --frozen-lockfile
       - name: Prepare bundled Whisper models (checksum verified)
         run: pnpm models:prepare
-      - name: Build the desktop .deb
-        run: pnpm tauri build --bundles deb
+      - name: Build the desktop .deb (E2E test build - embedded WebDriver plugin included)
+        run: pnpm tauri build --bundles deb --features wdio-e2e
       - name: Install the built package
         run: sudo dpkg -i src-tauri/target/release/bundle/deb/*.deb
-      - name: Install tauri-driver
-        run: cargo install tauri-driver
       - name: Run E2E suite
         run: xvfb-run --auto-servernum pnpm test:e2e:linux
-      - name: Upload diagnostics on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: e2e-linux-diagnostics
-          # tauri-driver process-lifecycle log only - never audio, a
-          # transcript, or the SQLite database (item 2.7).
-          path: /tmp/tauri-driver.log
-          if-no-files-found: ignore
 
-  # Windows counterpart to e2e-linux (item 2.6): same suite, same
-  # tauri-driver harness, but over Microsoft Edge/WebView2 instead of
-  # WebKitWebDriver, and native dialogs driven via Win32 interop
-  # (scripts/native-dialog-windows.ps1) instead of xdotool.
+  # Windows counterpart to e2e-linux (item 2.6): same suite, same embedded
+  # WebDriver provider (works identically cross-platform), native dialogs
+  # driven via Win32 interop (scripts/native-dialog-windows.ps1) instead of
+  # xdotool.
   e2e-windows:
     runs-on: windows-latest
     steps:
@@ -94,20 +85,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Prepare bundled Whisper models (checksum verified)
         run: pnpm models:prepare
-      - name: Build the desktop installer
-        run: pnpm tauri build --bundles nsis
-      - name: Install tauri-driver
-        run: cargo install tauri-driver
+      - name: Build the desktop installer (E2E test build - embedded WebDriver plugin included)
+        run: pnpm tauri build --bundles nsis --features wdio-e2e
       - name: Run E2E suite
         run: pnpm test:e2e:windows
-      - name: Upload diagnostics on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: e2e-windows-diagnostics
-          # tauri-driver process-lifecycle log only - never audio, a
-          # transcript, or the SQLite database (item 2.7).
-          path: |
-            ${{ runner.temp }}/tauri-driver.log
-            ${{ runner.temp }}/tauri-driver.log.err
-          if-no-files-found: ignore

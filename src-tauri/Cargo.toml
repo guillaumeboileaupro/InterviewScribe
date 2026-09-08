@@ -1,6 +1,6 @@
 [package]
 name = "interviewscribe"
-version = "0.1.1"
+version = "0.1.2"
 description = "Local-first interview transcription"
 authors = ["Guillaume Boileau"]
 edition = "2021"
@@ -30,6 +30,15 @@ genpdf = "0.2"
 which = "8"
 cpal = "0.18.2"
 hound = "3.5.1"
+# Embedded WebDriver server for E2E testing only (docs/TEST_IMPLEMENTATION_PLAN.md
+# section 2) - never compiled into a real build. A network-reachable automation
+# server has no place in a local-first, offline-only app; only the `wdio-e2e`
+# feature (enabled exclusively by e2e-linux/e2e-windows CI jobs, never
+# release.yml) pulls it in.
+tauri-plugin-wdio-webdriver = { version = "1", optional = true }
+
+[features]
+wdio-e2e = ["dep:tauri-plugin-wdio-webdriver"]
 
 [target.'cfg(target_os = "android")'.dependencies]
 tauri-plugin-fs = "2"

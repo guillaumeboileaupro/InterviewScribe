@@ -955,6 +955,10 @@ pub fn run() {
     let builder = tauri::Builder::default();
     #[cfg(target_os = "android")]
     let builder = builder.plugin(tauri_plugin_fs::init());
+    // E2E test builds only (`--features wdio-e2e`) - never present in a real
+    // build, see the dependency comment in Cargo.toml.
+    #[cfg(feature = "wdio-e2e")]
+    let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
     builder
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
