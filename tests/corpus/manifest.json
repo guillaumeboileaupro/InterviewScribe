@@ -45,6 +45,21 @@
       "reference_text": "avoir un chat dans la gorge",
       "attribution": "Jeuwre, Wikimedia Commons",
       "notes": "Native Belgian French male voice; original Ogg remains outside Git."
+    },
+    {
+      "id": "ami-manual-annotations-1.6.2",
+      "corpus": "AMI manual annotations",
+      "version": "1.6.2",
+      "url": "https://groups.inf.ed.ac.uk/ami/AMICorpusAnnotations/ami_public_manual_1.6.2.zip",
+      "dataset_page": "https://groups.inf.ed.ac.uk/ami/download/",
+      "license": "CC-BY-4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "sha256": "b56e5babb2496b8795deeeda7e71178d7fbc9963f94276cf2a3f4b56ebbc9f9d",
+      "size_bytes": 22887865,
+      "language": "en",
+      "speaker_count": 4,
+      "redistributable": true,
+      "notes": "Official NXT manual annotations; preparation extracts only ES2002a words overlapping 120-130 s."
     }
   ],
   "planned_cases": [

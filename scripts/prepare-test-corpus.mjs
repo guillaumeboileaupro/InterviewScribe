@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { basename, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 
 const sourcePath = resolve(process.argv[2] ?? "/tmp/ES2002a.Mix-Headset.wav");
+const annotationsDirectory = process.argv[3] ? resolve(process.argv[3]) : null;
 const manifestPath = new URL("../tests/corpus/manifest.json", import.meta.url);
 const outputDirectory = new URL("../tests/corpus/generated/", import.meta.url);
 const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
@@ -72,10 +73,48 @@ await writeFile(
   new URL("report.json", outputDirectory),
   `${JSON.stringify(report, null, 2)}\n`,
 );
+if (annotationsDirectory) {
+  const words = [];
+  for (const speaker of ["A", "B", "C", "D"]) {
+    const xml = await readFile(
+      join(annotationsDirectory, `ES2002a.${speaker}.words.xml`),
+      "latin1",
+    );
+    for (const match of xml.matchAll(
+      /<w\s+[^>]*starttime="([0-9.]+)"[^>]*endtime="([0-9.]+)"[^>]*>([^<]*)<\/w>/g,
+    )) {
+      const start = Number(match[1]);
+      const end = Number(match[2]);
+      if (end < 120 || start > 130 || /punc="true"/.test(match[0])) continue;
+      words.push({
+        speaker,
+        start_ms: Math.max(0, Math.round((start - 120) * 1000)),
+        end_ms: Math.min(10_000, Math.round((end - 120) * 1000)),
+        text: decodeXml(match[3]),
+      });
+    }
+  }
+  words.sort((left, right) => left.start_ms - right.start_ms);
+  await writeFile(
+    new URL("ami-reference.json", outputDirectory),
+    `${JSON.stringify({ source: "ES2002a", window_ms: [120000, 130000], words }, null, 2)}\n`,
+  );
+  console.log(
+    `AMI reference prepared: ${words.length} timed words (content not logged)`,
+  );
+}
 console.log(JSON.stringify(report, null, 2));
 
 function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
+}
+
+function decodeXml(text) {
+  return text
+    .replaceAll("&#39;", "'")
+    .replaceAll("&amp;", "&")
+    .replaceAll("&quot;", '"')
+    .trim();
 }
 
 function parsePcm16MonoWav(bytes) {
