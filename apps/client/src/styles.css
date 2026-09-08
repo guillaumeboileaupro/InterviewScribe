@@ -374,6 +374,17 @@ p {
 .library {
   margin-top: 36px;
 }
+.recoveryLabel {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.recoveryActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
 .sectionTitle {
   display: flex;
   justify-content: space-between;

@@ -121,6 +121,12 @@ export function recoverInterview(
   return invoke("recover_interview", { interviewId, modelId });
 }
 
+export function keepInterruptedAsIs(
+  interviewId: number,
+): Promise<InterviewDetail> {
+  return invoke("keep_interrupted_as_is", { interviewId });
+}
+
 export function getInterview(interviewId: number): Promise<InterviewDetail> {
   return invoke("get_interview", { interviewId });
 }

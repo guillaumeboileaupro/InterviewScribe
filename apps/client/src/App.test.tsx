@@ -169,6 +169,112 @@ describe("App", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("recovers an interrupted recording from the library", async () => {
+    const interrupted = {
+      id: 12,
+      title: "Session interrompue",
+      language: "fr",
+      mode: "realtime",
+      audio_path: "/audio/12.wav",
+      status: "transcribing",
+      error_message: null,
+      created_at: "0",
+      updated_at: "0",
+    };
+    mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten") return null;
+      if (cmd === "list_interviews" || cmd === "list_recovery_candidates")
+        return [interrupted];
+      if (cmd === "recover_interview")
+        return {
+          interview: { ...interrupted, status: "transcribed" },
+          speakers: [],
+          segments: [],
+        };
+      if (cmd === "check_doc_export_available") return false;
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Récupérer" }));
+    expect(
+      await screen.findByRole("heading", {
+        level: 1,
+        name: "Session interrompue",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("can keep an interrupted recording without retranscribing it", async () => {
+    const commands: string[] = [];
+    const interrupted = {
+      id: 13,
+      title: "Audio partiel",
+      language: null,
+      mode: "realtime",
+      audio_path: "/audio/13.wav",
+      status: "transcribing",
+      error_message: null,
+      created_at: "0",
+      updated_at: "0",
+    };
+    mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten") return null;
+      commands.push(cmd);
+      if (cmd === "list_interviews" || cmd === "list_recovery_candidates")
+        return [interrupted];
+      if (cmd === "keep_interrupted_as_is")
+        return {
+          interview: { ...interrupted, status: "transcribed" },
+          speakers: [],
+          segments: [],
+        };
+      if (cmd === "check_doc_export_available") return false;
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+
+    render(<App />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Conserver en l’état" }),
+    );
+    await screen.findByRole("heading", { level: 1, name: "Audio partiel" });
+    expect(commands).toContain("keep_interrupted_as_is");
+    expect(commands).not.toContain("recover_interview");
+  });
+
+  it("keeps the interrupted session visible when recovery fails", async () => {
+    const interrupted = {
+      id: 14,
+      title: "WAV incomplet",
+      language: null,
+      mode: "realtime",
+      audio_path: "/audio/14.wav",
+      status: "transcribing",
+      error_message: null,
+      created_at: "0",
+      updated_at: "0",
+    };
+    mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten") return null;
+      if (cmd === "list_interviews" || cmd === "list_recovery_candidates")
+        return [interrupted];
+      if (cmd === "recover_interview") throw new Error("WAV partiel corrompu");
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Récupérer" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "WAV partiel corrompu",
+    );
+    expect(
+      screen.getByText("Enregistrement interrompu · audio local préservé"),
+    ).toBeInTheDocument();
+  });
+
   it("requires confirmation before deleting an interview and refreshes the library", async () => {
     let deleted = false;
     const commands: string[] = [];

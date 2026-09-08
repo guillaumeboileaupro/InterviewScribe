@@ -11,12 +11,15 @@ import {
   exportInterviewDoc,
   getInterview,
   importInterview,
+  keepInterruptedAsIs,
   listAvailableModels,
   listInputDevices,
   listInterviews,
+  listRecoveryCandidates,
   mergeSpeakers,
   pauseRecording,
   readRecentLogs,
+  recoverInterview,
   reassignSegmentSpeaker,
   renameSpeaker,
   resumeRecording,
@@ -78,6 +81,9 @@ export default function App() {
   const [source, setSource] = useState("microphone");
 
   const [interviews, setInterviews] = useState<Interview[]>([]);
+  const [recoveryIds, setRecoveryIds] = useState<Set<number>>(new Set());
+  const [recoveryBusyId, setRecoveryBusyId] = useState<number | null>(null);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const [currentInterview, setCurrentInterview] =
     useState<InterviewDetail | null>(null);
 
@@ -132,6 +138,11 @@ export default function App() {
     listInterviews()
       .then(setInterviews)
       .catch(() => setInterviews([]));
+    listRecoveryCandidates()
+      .then((candidates) =>
+        setRecoveryIds(new Set(candidates.map((candidate) => candidate.id))),
+      )
+      .catch(() => setRecoveryIds(new Set()));
   };
 
   useEffect(() => {
@@ -248,6 +259,23 @@ export default function App() {
       setDeleteError(String(err));
     } finally {
       setDeleteBusy(false);
+    }
+  };
+
+  const handleRecovery = async (interviewId: number, keepOnly: boolean) => {
+    setRecoveryBusyId(interviewId);
+    setRecoveryError(null);
+    try {
+      const detail = keepOnly
+        ? await keepInterruptedAsIs(interviewId)
+        : await recoverInterview(interviewId, selectedModelId || undefined);
+      setCurrentInterview(detail);
+      setPage("interview");
+      refreshInterviews();
+    } catch (err) {
+      setRecoveryError(String(err));
+    } finally {
+      setRecoveryBusyId(null);
     }
   };
 
@@ -718,25 +746,62 @@ export default function App() {
                     </button>
                   </div>
                 ) : (
-                  <ul>
-                    {interviews.map((interview) => (
-                      <li className="interviewRow" key={interview.id}>
-                        <button
-                          className="textButton"
-                          onClick={() => openInterview(interview.id)}
-                        >
-                          {interview.title} — {interview.status}
-                        </button>
-                        <button
-                          className="dangerTextButton"
-                          aria-label={`Supprimer ${interview.title}`}
-                          onClick={() => requestInterviewDeletion(interview)}
-                        >
-                          Supprimer
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
+                  <>
+                    {recoveryError && (
+                      <div className="notice" role="alert">
+                        Récupération impossible : {recoveryError}
+                      </div>
+                    )}
+                    <ul>
+                      {interviews.map((interview) => (
+                        <li className="interviewRow" key={interview.id}>
+                          <div>
+                            <button
+                              className="textButton"
+                              onClick={() => openInterview(interview.id)}
+                            >
+                              {interview.title} — {interview.status}
+                            </button>
+                            {recoveryIds.has(interview.id) && (
+                              <p className="recoveryLabel">
+                                Enregistrement interrompu · audio local préservé
+                              </p>
+                            )}
+                          </div>
+                          {recoveryIds.has(interview.id) && (
+                            <div className="recoveryActions">
+                              <button
+                                disabled={recoveryBusyId === interview.id}
+                                onClick={() =>
+                                  handleRecovery(interview.id, false)
+                                }
+                              >
+                                {recoveryBusyId === interview.id
+                                  ? "Récupération…"
+                                  : "Récupérer"}
+                              </button>
+                              <button
+                                className="secondary"
+                                disabled={recoveryBusyId === interview.id}
+                                onClick={() =>
+                                  handleRecovery(interview.id, true)
+                                }
+                              >
+                                Conserver en l’état
+                              </button>
+                            </div>
+                          )}
+                          <button
+                            className="dangerTextButton"
+                            aria-label={`Supprimer ${interview.title}`}
+                            onClick={() => requestInterviewDeletion(interview)}
+                          >
+                            Supprimer
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
                 )}
               </section>
               <footer>

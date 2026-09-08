@@ -112,6 +112,34 @@ fn inspect_recovery_candidate(
 }
 
 #[tauri::command]
+fn keep_interrupted_as_is(
+    db: tauri::State<DbState>,
+    recording: tauri::State<RecordingState>,
+    interview_id: i64,
+) -> Result<db::models::InterviewDetail, AppError> {
+    if recording
+        .0
+        .lock()
+        .map_err(|_| AppError::Audio("etat d'enregistrement indisponible".into()))?
+        .as_ref()
+        .is_some_and(|active| active.interview_id == interview_id)
+    {
+        return Err(AppError::Audio(
+            "conservation refusee: l'enregistrement est encore actif".into(),
+        ));
+    }
+    let conn = lock_db(&db)?;
+    let interview = db::interviews::get(&conn, interview_id)?;
+    if interview.mode != "realtime" || interview.status != "transcribing" {
+        return Err(AppError::Audio(
+            "cette session n'est pas un enregistrement interrompu".into(),
+        ));
+    }
+    db::interviews::update_status(&conn, interview_id, "transcribed", None)?;
+    db::get_detail(&conn, interview_id)
+}
+
+#[tauri::command]
 async fn recover_interview(
     app: tauri::AppHandle,
     interview_id: i64,
@@ -943,6 +971,7 @@ pub fn run() {
             list_interviews,
             list_recovery_candidates,
             inspect_recovery_candidate,
+            keep_interrupted_as_is,
             recover_interview,
             get_interview,
             delete_interview,
