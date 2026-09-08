@@ -33,4 +33,9 @@ test("the manifest tracks every required acoustic case", async () => {
   ]) {
     assert.ok(ids.has(required), `missing corpus case: ${required}`);
   }
+  for (const generated of manifest.planned_cases.filter(
+    (entry) => entry.state === "generated-by-script",
+  )) {
+    assert.match(generated.sha256, /^[a-f0-9]{64}$/);
+  }
 });

@@ -33,21 +33,29 @@
       "source": "ami-es2002a-mix-headset",
       "state": "selected"
     },
-    { "id": "silence", "source": "synthetic", "state": "pending-generation" },
+    {
+      "id": "silence",
+      "source": "synthetic",
+      "state": "generated-by-script",
+      "sha256": "ee7bea4232762775f8fce9b3e27e4d3948c8ac6a45a87ca769f703d6eed0b448"
+    },
     {
       "id": "noise",
       "source": "synthetic-deterministic",
-      "state": "pending-generation"
+      "state": "generated-by-script",
+      "sha256": "058d6418d3c3f20dd36822875df8bbe863794fead5ec6992e7cc62f1c360dbf2"
     },
     {
       "id": "music",
       "source": "synthetic-tones",
-      "state": "pending-generation"
+      "state": "generated-by-script",
+      "sha256": "b59dab7f8d6a312e15913c1ae525d2cdcaf22209fa5e82fc7c9f545f1f13c7cd"
     },
     {
       "id": "overlap",
       "source": "ami-derived-mix",
-      "state": "pending-generation"
+      "state": "generated-by-script",
+      "sha256": "57ebe411ce9173185d3ecb9628a23a773897784e23922cadb656a5a007102212"
     }
   ]
 }

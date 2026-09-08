@@ -16,6 +16,7 @@ src-tauri/gen/
 *.db
 *.sqlite
 *.sqlite3
+tests/corpus/generated/
 .env
 .env.*
 !.env.example
