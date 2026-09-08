@@ -121,10 +121,7 @@ pub fn delete_with_managed_audio(
 ) -> Result<(), AppError> {
     let interview = get(conn, id)?;
     let audio_path = Path::new(&interview.audio_path);
-    let expected_stem = id.to_string();
-    let is_managed = audio_path.parent() == Some(audio_dir)
-        && audio_path.file_stem().and_then(|stem| stem.to_str()) == Some(expected_stem.as_str());
-    if !is_managed {
+    if !is_managed_audio_path(audio_path, audio_dir, id) {
         return Err(AppError::Audio(
             "suppression refusee: le fichier audio n'appartient pas au stockage prive".into(),
         ));
@@ -140,6 +137,16 @@ pub fn delete_with_managed_audio(
     }
     tx.commit()?;
     Ok(())
+}
+
+/// Checks that an audio path belongs to this application's private storage
+/// and is named after its interview. Callers must use this before reading or
+/// deleting a path persisted in SQLite: legacy or corrupt rows may otherwise
+/// point at an arbitrary user-owned file.
+pub(crate) fn is_managed_audio_path(audio_path: &Path, audio_dir: &Path, id: i64) -> bool {
+    let expected_stem = id.to_string();
+    audio_path.parent() == Some(audio_dir)
+        && audio_path.file_stem().and_then(|stem| stem.to_str()) == Some(expected_stem.as_str())
 }
 
 fn row_to_interview(row: &Row) -> rusqlite::Result<Interview> {

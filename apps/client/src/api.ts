@@ -38,6 +38,14 @@ export interface InterviewDetail {
   segments: Segment[];
 }
 
+export interface RecoveryInspection {
+  interview_id: number;
+  audio_duration_ms: number;
+  last_stable_end_ms: number;
+  remaining_ms: number;
+  segment_count: number;
+}
+
 export interface Edit {
   id: number;
   segment_id: number;
@@ -88,6 +96,12 @@ export function listInterviews(): Promise<Interview[]> {
 
 export function listRecoveryCandidates(): Promise<Interview[]> {
   return invoke("list_recovery_candidates");
+}
+
+export function inspectRecoveryCandidate(
+  interviewId: number,
+): Promise<RecoveryInspection> {
+  return invoke("inspect_recovery_candidate", { interviewId });
 }
 
 export function getInterview(interviewId: number): Promise<InterviewDetail> {

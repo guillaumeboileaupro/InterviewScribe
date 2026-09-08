@@ -6,6 +6,7 @@ mod diagnostics;
 mod diarization;
 mod error;
 mod export;
+mod recovery;
 mod transcription;
 
 use std::path::Path;
@@ -84,6 +85,30 @@ fn list_recovery_candidates(
         .map(|active| active.interview_id);
     let conn = lock_db(&db)?;
     db::interviews::list_recovery_candidates(&conn, active_interview_id)
+}
+
+#[tauri::command]
+fn inspect_recovery_candidate(
+    app: tauri::AppHandle,
+    db: tauri::State<DbState>,
+    recording: tauri::State<RecordingState>,
+    interview_id: i64,
+) -> Result<recovery::RecoveryInspection, AppError> {
+    let active = recording
+        .0
+        .lock()
+        .map_err(|_| AppError::Audio("etat d'enregistrement indisponible".into()))?;
+    if active
+        .as_ref()
+        .is_some_and(|recording| recording.interview_id == interview_id)
+    {
+        return Err(AppError::Audio(
+            "recuperation refusee: l'enregistrement est encore actif".into(),
+        ));
+    }
+    let audio_dir = app_data_subdir(&app, "audio")?;
+    let conn = lock_db(&db)?;
+    recovery::inspect(&conn, interview_id, &audio_dir)
 }
 
 #[tauri::command]
@@ -842,6 +867,7 @@ pub fn run() {
             import_interview,
             list_interviews,
             list_recovery_candidates,
+            inspect_recovery_candidate,
             get_interview,
             delete_interview,
             ensure_whisper_model,
