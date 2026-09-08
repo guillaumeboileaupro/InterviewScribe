@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
@@ -169,6 +169,150 @@ describe("App", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("requires confirmation before deleting an interview and refreshes the library", async () => {
+    let deleted = false;
+    const commands: string[] = [];
+    mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten") return null;
+      commands.push(cmd);
+      if (cmd === "list_interviews")
+        return deleted
+          ? []
+          : [
+              {
+                id: 4,
+                title: "Entretien sensible",
+                language: "fr",
+                mode: "posteriori",
+                audio_path: "/audio/4.wav",
+                status: "transcribed",
+                error_message: null,
+                created_at: "0",
+                updated_at: "0",
+              },
+            ];
+      if (cmd === "delete_interview") {
+        deleted = true;
+        return null;
+      }
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+
+    render(<App />);
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Supprimer Entretien sensible",
+      }),
+    );
+    const dialog = screen.getByRole("dialog", {
+      name: "Supprimer cet entretien ?",
+    });
+    expect(dialog).toHaveTextContent("sa copie audio privée");
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Conserver l’entretien" }),
+      ).toHaveFocus(),
+    );
+    expect(commands).not.toContain("delete_interview");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Supprimer définitivement" }),
+    );
+
+    await waitFor(() => expect(commands).toContain("delete_interview"));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(screen.getByText("Aucun entretien enregistré")).toBeInTheDocument();
+  });
+
+  it("keeps the confirmation open and reports a deletion failure", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten") return null;
+      if (cmd === "list_interviews")
+        return [
+          {
+            id: 5,
+            title: "Entretien à conserver",
+            language: null,
+            mode: "posteriori",
+            audio_path: "/audio/5.wav",
+            status: "transcribed",
+            error_message: null,
+            created_at: "0",
+            updated_at: "0",
+          },
+        ];
+      if (cmd === "delete_interview")
+        throw new Error("le fichier privé est verrouillé");
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+
+    render(<App />);
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Supprimer Entretien à conserver",
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Supprimer définitivement" }),
+    );
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "le fichier privé est verrouillé",
+    );
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(
+      screen.getByText("Entretien à conserver — transcribed"),
+    ).toBeInTheDocument();
+  });
+
+  it("closes deletion confirmation with Escape without deleting", async () => {
+    const commands: string[] = [];
+    mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten") return null;
+      commands.push(cmd);
+      if (cmd === "list_interviews")
+        return [
+          {
+            id: 6,
+            title: "Entretien clavier",
+            language: "fr",
+            mode: "posteriori",
+            audio_path: "/audio/6.wav",
+            status: "transcribed",
+            error_message: null,
+            created_at: "0",
+            updated_at: "0",
+          },
+        ];
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+
+    render(<App />);
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "Supprimer Entretien clavier",
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Conserver l’entretien" }),
+      ).toHaveFocus(),
+    );
+
+    fireEvent.keyDown(document, { key: "Escape" });
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(commands).not.toContain("delete_interview");
+    expect(
+      screen.getByText("Entretien clavier — transcribed"),
+    ).toBeInTheDocument();
+  });
+
   it("shows the bundled Turbo model without any download action", async () => {
     const commands: string[] = [];
     mockIPC((cmd) => {
@@ -194,6 +338,60 @@ describe("App", () => {
       screen.queryByRole("button", { name: /Télécharger/ }),
     ).not.toBeInTheDocument();
     expect(commands).not.toContain("download_whisper_model");
+  });
+
+  it("shows the local diagnostics log in Reglages", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten") return null;
+      if (cmd === "list_interviews") return [];
+      if (cmd === "ensure_whisper_model")
+        return {
+          state: "Ready",
+          path: "/resources/models/ggml-large-v3-turbo-q5_0.bin",
+          name: "Whisper Large v3 Turbo (Q5_0)",
+          size_mb: 575,
+        };
+      if (cmd === "read_recent_logs")
+        return "[2026-09-08T10:00:00Z] [INFO] start_recording device=defaut";
+      if (cmd === "client_log") return null;
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Réglages" }));
+    expect(
+      await screen.findByText(/start_recording device=defaut/),
+    ).toBeInTheDocument();
+  });
+
+  it("copies the diagnostics log to the clipboard", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten") return null;
+      if (cmd === "list_interviews") return [];
+      if (cmd === "ensure_whisper_model")
+        return {
+          state: "Ready",
+          path: "/resources/models/ggml-large-v3-turbo-q5_0.bin",
+          name: "Whisper Large v3 Turbo (Q5_0)",
+          size_mb: 575,
+        };
+      if (cmd === "read_recent_logs") return "[INFO] repere de test";
+      if (cmd === "client_log") return null;
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Réglages" }));
+    await screen.findByText("[INFO] repere de test");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Copier les journaux" }),
+    );
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith("[INFO] repere de test"),
+    );
+    expect(await screen.findByText("Copié ✓")).toBeInTheDocument();
   });
 
   it("imports and transcribes a file, then shows the real segments", async () => {
@@ -474,7 +672,9 @@ describe("App", () => {
 
     render(<App />);
     fireEvent.click(
-      await screen.findByRole("button", { name: /entretien.wav/ }),
+      await screen.findByRole("button", {
+        name: "entretien.wav — transcribed",
+      }),
     );
     const cleanupButton = await screen.findByRole("button", {
       name: "Nettoyer",
@@ -556,7 +756,9 @@ describe("App", () => {
 
     render(<App />);
     fireEvent.click(
-      await screen.findByRole("button", { name: /entretien.wav/ }),
+      await screen.findByRole("button", {
+        name: "entretien.wav — transcribed",
+      }),
     );
     fireEvent.click(await screen.findByRole("button", { name: "Modifier" }));
     fireEvent.change(screen.getByRole("textbox"), {
@@ -627,7 +829,9 @@ describe("App", () => {
 
     render(<App />);
     fireEvent.click(
-      await screen.findByRole("button", { name: /entretien.wav/ }),
+      await screen.findByRole("button", {
+        name: "entretien.wav — transcribed",
+      }),
     );
     fireEvent.click(await screen.findByRole("button", { name: "Renommer" }));
     fireEvent.change(screen.getByPlaceholderText("Intervenant 1"), {
@@ -730,7 +934,9 @@ describe("App", () => {
 
     render(<App />);
     fireEvent.click(
-      await screen.findByRole("button", { name: /entretien.wav/ }),
+      await screen.findByRole("button", {
+        name: "entretien.wav — transcribed",
+      }),
     );
     await screen.findByText("Intervenant 2");
 
@@ -826,7 +1032,9 @@ describe("App", () => {
 
     render(<App />);
     fireEvent.click(
-      await screen.findByRole("button", { name: /entretien.wav/ }),
+      await screen.findByRole("button", {
+        name: "entretien.wav — transcribed",
+      }),
     );
     const segmentSpeaker = await screen.findByRole("combobox", {
       name: "Locuteur du segment",
@@ -900,7 +1108,9 @@ describe("App", () => {
 
     render(<App />);
     fireEvent.click(
-      await screen.findByRole("button", { name: /entretien.wav/ }),
+      await screen.findByRole("button", {
+        name: "entretien.wav — transcribed",
+      }),
     );
     expect(await screen.findByText("incertain")).toBeInTheDocument();
   });
@@ -1009,7 +1219,9 @@ describe("model prerequisites", () => {
 
     render(<App />);
     fireEvent.click(
-      await screen.findByRole("button", { name: /entretien.wav/ }),
+      await screen.findByRole("button", {
+        name: "entretien.wav — transcribed",
+      }),
     );
     expect(
       await screen.findByRole("button", { name: "Exporter en DOC" }),

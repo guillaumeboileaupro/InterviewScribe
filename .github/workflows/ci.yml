@@ -23,6 +23,7 @@ jobs:
       - run: pnpm format:check
       - run: pnpm test
       - run: pnpm test:packaging
+      - run: pnpm test:privacy
       - run: pnpm build
 
   rust:

@@ -25,6 +25,12 @@ impl Serialize for AppError {
     where
         S: serde::Serializer,
     {
+        // Single choke point every command's error passes through on its way
+        // to the frontend - logging here covers all of them for free. Safe:
+        // every `AppError` message is a technical library/validation string
+        // (see docs/ARCHITECTURE.md "Diagnostics locaux"), never audio,
+        // transcript text or a speaker name.
+        crate::diagnostics::log("ERROR", &self.to_string());
         serializer.serialize_str(&self.to_string())
     }
 }

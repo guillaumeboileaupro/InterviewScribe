@@ -271,9 +271,17 @@ fn run_capture_thread(
     ready_tx: mpsc::Sender<Result<(), String>>,
 ) {
     let host = cpal::default_host();
+    crate::diagnostics::log(
+        "INFO",
+        &format!(
+            "resolution du peripherique: {}",
+            device_name.as_deref().unwrap_or("defaut")
+        ),
+    );
     let device = match resolve_device(&host, device_name.as_deref()) {
         Ok(device) => device,
         Err(message) => {
+            crate::diagnostics::log("ERROR", &format!("peripherique introuvable: {message}"));
             let _ = ready_tx.send(Err(message));
             return;
         }
@@ -282,6 +290,10 @@ fn run_capture_thread(
     let sample_rate = match device.default_input_config() {
         Ok(config) => config.sample_rate(),
         Err(err) => {
+            crate::diagnostics::log(
+                "ERROR",
+                &format!("configuration d'entree audio indisponible: {err}"),
+            );
             let _ = ready_tx.send(Err(err.to_string()));
             return;
         }
@@ -290,6 +302,10 @@ fn run_capture_thread(
     let file_writer = match hound::WavWriter::create(&wav_path, wav_spec(sample_rate)) {
         Ok(writer) => writer,
         Err(err) => {
+            crate::diagnostics::log(
+                "ERROR",
+                &format!("impossible de creer le fichier audio: {err}"),
+            );
             let _ = ready_tx.send(Err(format!("impossible de creer le fichier audio: {err}")));
             return;
         }
@@ -300,23 +316,34 @@ fn run_capture_thread(
         match build_stream(&device, writer.clone(), events.clone()) {
             Ok(built) => built,
             Err(message) => {
+                crate::diagnostics::log(
+                    "ERROR",
+                    &format!("construction du flux audio echouee: {message}"),
+                );
                 let _ = ready_tx.send(Err(message));
                 return;
             }
         };
     if let Err(err) = stream.play() {
+        crate::diagnostics::log(
+            "ERROR",
+            &format!("impossible de demarrer la capture: {err}"),
+        );
         let _ = ready_tx.send(Err(format!("impossible de demarrer la capture: {err}")));
         return;
     }
+    crate::diagnostics::log("INFO", "flux audio en lecture");
     let _ = ready_tx.send(Ok(()));
 
     let mut current_device_name = device_name;
     for msg in control_rx {
         match msg {
             ControlMsg::Pause => {
+                crate::diagnostics::log("INFO", "capture: pause");
                 let _ = stream.pause();
             }
             ControlMsg::Resume(requested_device) => {
+                crate::diagnostics::log("INFO", "capture: reprise");
                 let changing_device =
                     requested_device.is_some() && requested_device != current_device_name;
                 if changing_device {
@@ -347,7 +374,10 @@ fn run_capture_thread(
                     )));
                 }
             }
-            ControlMsg::Stop => break,
+            ControlMsg::Stop => {
+                crate::diagnostics::log("INFO", "capture: arret");
+                break;
+            }
         }
     }
 

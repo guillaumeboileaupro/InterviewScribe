@@ -90,6 +90,10 @@ export function getInterview(interviewId: number): Promise<InterviewDetail> {
   return invoke("get_interview", { interviewId });
 }
 
+export function deleteInterview(interviewId: number): Promise<void> {
+  return invoke("delete_interview", { interviewId });
+}
+
 export function ensureWhisperModel(): Promise<ModelStatus> {
   return invoke("ensure_whisper_model");
 }
@@ -211,4 +215,12 @@ export function resumeRecording(deviceName?: string): Promise<void> {
 
 export function stopRecording(): Promise<InterviewDetail> {
   return invoke("stop_recording");
+}
+
+export function readRecentLogs(): Promise<string> {
+  return invoke("read_recent_logs");
+}
+
+export function clientLog(level: string, message: string): Promise<void> {
+  return invoke("client_log", { level, message });
 }

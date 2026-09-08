@@ -2,6 +2,7 @@ mod audio;
 mod capture;
 mod cleanup;
 mod db;
+mod diagnostics;
 mod diarization;
 mod error;
 mod export;
@@ -77,6 +78,30 @@ fn get_interview(
 ) -> Result<db::models::InterviewDetail, AppError> {
     let conn = lock_db(&db)?;
     db::get_detail(&conn, interview_id)
+}
+
+#[tauri::command]
+fn delete_interview(
+    app: tauri::AppHandle,
+    db: tauri::State<DbState>,
+    recording: tauri::State<RecordingState>,
+    interview_id: i64,
+) -> Result<(), AppError> {
+    let active = recording
+        .0
+        .lock()
+        .map_err(|_| AppError::Audio("etat d'enregistrement indisponible".into()))?;
+    if active
+        .as_ref()
+        .is_some_and(|recording| recording.interview_id == interview_id)
+    {
+        return Err(AppError::Audio(
+            "impossible de supprimer un enregistrement en cours".into(),
+        ));
+    }
+    let audio_dir = app_data_subdir(&app, "audio")?;
+    let mut conn = lock_db(&db)?;
+    db::interviews::delete_with_managed_audio(&mut conn, interview_id, &audio_dir)
 }
 
 #[tauri::command]
@@ -253,6 +278,14 @@ fn start_recording_local(
     device_name: Option<String>,
     expected_speaker_count: Option<usize>,
 ) -> Result<db::models::Interview, AppError> {
+    diagnostics::log(
+        "INFO",
+        &format!(
+            "start_recording device={} expected_speaker_count={:?}",
+            device_name.as_deref().unwrap_or("defaut"),
+            expected_speaker_count
+        ),
+    );
     let recording = app.state::<RecordingState>();
     {
         let guard = recording
@@ -267,6 +300,10 @@ fn start_recording_local(
     }
 
     // Fail fast on missing/corrupt models before ever opening the microphone.
+    diagnostics::log(
+        "INFO",
+        "verification des modeles avant ouverture du microphone",
+    );
     let transcription::model::ModelStatus::Ready {
         path: model_path, ..
     } = transcription::model::ensure_model(app)?;
@@ -274,6 +311,7 @@ fn start_recording_local(
         path: diarization_model_path,
         ..
     } = transcription::model::ensure_manifest(app, transcription::model::diarization_manifest()?)?;
+    diagnostics::log("INFO", "modeles ok");
 
     let db = app.state::<DbState>();
     let audio_dir = app_data_subdir(app, "audio")?;
@@ -285,14 +323,17 @@ fn start_recording_local(
         db::interviews::get(&conn, interview.id)?
     };
 
+    diagnostics::log("INFO", "ouverture du peripherique audio");
     let wav_path = Path::new(&interview.audio_path).to_path_buf();
     let (event_tx, event_rx) = std::sync::mpsc::channel();
     let handle = capture::session::start(device_name, wav_path, event_tx).inspect_err(|err| {
+        diagnostics::log("ERROR", &format!("echec d'ouverture du microphone: {err}"));
         if let Ok(conn) = lock_db(&db) {
             let _ =
                 db::interviews::update_status(&conn, interview.id, "error", Some(&err.to_string()));
         }
     })?;
+    diagnostics::log("INFO", "microphone ouvert, capture demarree");
 
     let processing_app = app.clone();
     let interview_id = interview.id;
@@ -322,6 +363,7 @@ fn start_recording_local(
 
 #[tauri::command]
 fn pause_recording(recording: tauri::State<RecordingState>) -> Result<(), AppError> {
+    diagnostics::log("INFO", "pause_recording");
     let guard = recording
         .0
         .lock()
@@ -340,6 +382,13 @@ fn resume_recording(
     recording: tauri::State<RecordingState>,
     device_name: Option<String>,
 ) -> Result<(), AppError> {
+    diagnostics::log(
+        "INFO",
+        &format!(
+            "resume_recording device={}",
+            device_name.as_deref().unwrap_or("inchange")
+        ),
+    );
     let guard = recording
         .0
         .lock()
@@ -355,6 +404,7 @@ fn resume_recording(
 
 #[tauri::command]
 async fn stop_recording(app: tauri::AppHandle) -> Result<db::models::InterviewDetail, AppError> {
+    diagnostics::log("INFO", "stop_recording");
     tauri::async_runtime::spawn_blocking(move || {
         let recording = app.state::<RecordingState>();
         let active = {
@@ -713,6 +763,22 @@ fn check_doc_export_available() -> bool {
     export::doc::is_available()
 }
 
+/// Returns the tail of the local diagnostics log for display in Reglages -
+/// see docs/ARCHITECTURE.md "Diagnostics locaux". Never audio/transcript
+/// content, only technical events and error messages.
+#[tauri::command]
+fn read_recent_logs() -> String {
+    diagnostics::read_tail(500)
+}
+
+/// Lets the frontend append to the same diagnostics log, so a JS-side
+/// failure (including one that happens before any backend command is even
+/// reached) still leaves a trace the user can hand over.
+#[tauri::command]
+fn client_log(level: String, message: String) {
+    diagnostics::log(&level, &format!("[frontend] {message}"));
+}
+
 #[tauri::command]
 async fn export_interview_doc(
     app: tauri::AppHandle,
@@ -748,6 +814,7 @@ pub fn run() {
     builder
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            diagnostics::init(app.handle())?;
             let base = app.path().app_data_dir()?;
             std::fs::create_dir_all(&base)?;
             let conn = db::open(&base.join("interviewscribe.sqlite3"))?;
@@ -760,6 +827,7 @@ pub fn run() {
             import_interview,
             list_interviews,
             get_interview,
+            delete_interview,
             ensure_whisper_model,
             transcribe_interview,
             list_input_devices,
@@ -777,7 +845,9 @@ pub fn run() {
             list_segment_edits,
             export_interview,
             export_interview_doc,
-            check_doc_export_available
+            check_doc_export_available,
+            read_recent_logs,
+            client_log
         ])
         .run(tauri::generate_context!())
         .expect("failed to run InterviewScribe");

@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use rusqlite::{params, Connection, Row};
 
 use super::models::Interview;
@@ -85,6 +87,38 @@ pub fn update_status(
     Ok(())
 }
 
+/// Deletes an interview and its private audio copy as one coordinated
+/// operation. The database transaction is rolled back if the file cannot be
+/// removed. A path outside `audio_dir`, or not named after the interview id,
+/// is rejected so a corrupt/legacy row can never delete a user-owned source.
+pub fn delete_with_managed_audio(
+    conn: &mut Connection,
+    id: i64,
+    audio_dir: &Path,
+) -> Result<(), AppError> {
+    let interview = get(conn, id)?;
+    let audio_path = Path::new(&interview.audio_path);
+    let expected_stem = id.to_string();
+    let is_managed = audio_path.parent() == Some(audio_dir)
+        && audio_path.file_stem().and_then(|stem| stem.to_str()) == Some(expected_stem.as_str());
+    if !is_managed {
+        return Err(AppError::Audio(
+            "suppression refusee: le fichier audio n'appartient pas au stockage prive".into(),
+        ));
+    }
+
+    let tx = conn.transaction()?;
+    let deleted = tx.execute("DELETE FROM interview WHERE id = ?1", params![id])?;
+    if deleted == 0 {
+        return Err(AppError::NotFound(format!("interview {id}")));
+    }
+    if audio_path.exists() {
+        std::fs::remove_file(audio_path)?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
 fn row_to_interview(row: &Row) -> rusqlite::Result<Interview> {
     Ok(Interview {
         id: row.get(0)?,
@@ -153,5 +187,98 @@ mod tests {
         create(&conn, "Second", None, "/audio/2.wav").unwrap();
         let all = list(&conn).unwrap();
         assert_eq!(all.len(), 2);
+    }
+
+    #[test]
+    fn delete_with_managed_audio_removes_file_and_database_row() {
+        let mut conn = setup();
+        let root = std::env::temp_dir().join(format!(
+            "interviewscribe-delete-managed-{}",
+            std::process::id()
+        ));
+        let audio_dir = root.join("audio");
+        std::fs::create_dir_all(&audio_dir).unwrap();
+        let interview = create(&conn, "A supprimer", None, "placeholder").unwrap();
+        let audio_path = audio_dir.join(format!("{}.wav", interview.id));
+        std::fs::write(&audio_path, b"private audio sentinel").unwrap();
+        set_audio_path(&conn, interview.id, &audio_path.to_string_lossy()).unwrap();
+
+        delete_with_managed_audio(&mut conn, interview.id, &audio_dir).unwrap();
+
+        assert!(!audio_path.exists());
+        assert!(matches!(
+            get(&conn, interview.id),
+            Err(AppError::NotFound(_))
+        ));
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn delete_with_managed_audio_refuses_external_file_without_touching_anything() {
+        let mut conn = setup();
+        let root = std::env::temp_dir().join(format!(
+            "interviewscribe-delete-external-{}",
+            std::process::id()
+        ));
+        let audio_dir = root.join("private-audio");
+        std::fs::create_dir_all(&audio_dir).unwrap();
+        let external = root.join("user-owned.wav");
+        std::fs::write(&external, b"must survive").unwrap();
+        let interview = create(&conn, "A conserver", None, &external.to_string_lossy()).unwrap();
+
+        let error = delete_with_managed_audio(&mut conn, interview.id, &audio_dir).unwrap_err();
+
+        assert!(matches!(error, AppError::Audio(_)));
+        assert_eq!(std::fs::read(&external).unwrap(), b"must survive");
+        assert_eq!(get(&conn, interview.id).unwrap().title, "A conserver");
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn delete_with_managed_audio_allows_an_already_missing_private_file() {
+        let mut conn = setup();
+        let audio_dir = std::env::temp_dir().join(format!(
+            "interviewscribe-delete-missing-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&audio_dir).unwrap();
+        let interview = create(&conn, "Audio absent", None, "placeholder").unwrap();
+        let audio_path = audio_dir.join(format!("{}.wav", interview.id));
+        set_audio_path(&conn, interview.id, &audio_path.to_string_lossy()).unwrap();
+
+        delete_with_managed_audio(&mut conn, interview.id, &audio_dir).unwrap();
+
+        assert!(matches!(
+            get(&conn, interview.id),
+            Err(AppError::NotFound(_))
+        ));
+        std::fs::remove_dir_all(audio_dir).ok();
+    }
+
+    #[test]
+    fn delete_with_managed_audio_rolls_back_database_when_file_removal_fails() {
+        let mut conn = setup();
+        let root = std::env::temp_dir().join(format!(
+            "interviewscribe-delete-rollback-{}",
+            std::process::id()
+        ));
+        let audio_dir = root.join("audio");
+        std::fs::create_dir_all(&audio_dir).unwrap();
+        let interview = create(&conn, "Suppression impossible", None, "placeholder").unwrap();
+        let audio_path = audio_dir.join(format!("{}.wav", interview.id));
+        // A directory at the managed file path makes remove_file fail on every
+        // supported platform without relying on Unix-only permissions.
+        std::fs::create_dir(&audio_path).unwrap();
+        set_audio_path(&conn, interview.id, &audio_path.to_string_lossy()).unwrap();
+
+        let error = delete_with_managed_audio(&mut conn, interview.id, &audio_dir).unwrap_err();
+
+        assert!(matches!(error, AppError::Io(_)));
+        assert!(audio_path.is_dir());
+        assert_eq!(
+            get(&conn, interview.id).unwrap().title,
+            "Suppression impossible"
+        );
+        std::fs::remove_dir_all(root).ok();
     }
 }

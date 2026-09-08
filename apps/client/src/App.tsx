@@ -5,6 +5,7 @@ import {
   applySegmentCleanup,
   checkDocExportAvailable,
   createSpeaker,
+  deleteInterview,
   ensureWhisperModel,
   exportInterview,
   exportInterviewDoc,
@@ -14,6 +15,7 @@ import {
   listInterviews,
   mergeSpeakers,
   pauseRecording,
+  readRecentLogs,
   reassignSegmentSpeaker,
   renameSpeaker,
   resumeRecording,
@@ -30,6 +32,7 @@ import {
   type Segment,
   type Speaker,
 } from "./api";
+import { breadcrumb, installGlobalErrorLogging } from "./diagnostics";
 
 const logo = new URL(
   "../../../assets/interviewscribe-logo.svg",
@@ -92,6 +95,12 @@ export default function App() {
   const [draftText, setDraftText] = useState("");
   const [interviewError, setInterviewError] = useState<string | null>(null);
   const [docAvailable, setDocAvailable] = useState(false);
+  const [deleteCandidate, setDeleteCandidate] = useState<Interview | null>(
+    null,
+  );
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const deleteCancelRef = useRef<HTMLButtonElement | null>(null);
 
   const [editingSpeakerId, setEditingSpeakerId] = useState<number | null>(null);
   const [speakerDraftName, setSpeakerDraftName] = useState("");
@@ -111,6 +120,9 @@ export default function App() {
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const recordingInterviewIdRef = useRef<number | null>(null);
 
+  const [diagnosticsText, setDiagnosticsText] = useState("");
+  const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
+
   const refreshInterviews = () => {
     listInterviews()
       .then(setInterviews)
@@ -122,10 +134,33 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    installGlobalErrorLogging();
+  }, []);
+
+  useEffect(() => {
+    if (!deleteCandidate) return;
+    deleteCancelRef.current?.focus();
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !deleteBusy) {
+        setDeleteCandidate(null);
+        setDeleteError(null);
+      }
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [deleteCandidate, deleteBusy]);
+
+  useEffect(() => {
     if (page === "settings") {
       ensureWhisperModel()
         .then(setModelStatus)
         .catch((err) => setModelError(String(err)));
+      readRecentLogs()
+        .then((text) => {
+          setDiagnosticsText(text);
+          setDiagnosticsCopied(false);
+        })
+        .catch(() => setDiagnosticsText(""));
     }
     if (page === "interview") {
       checkDocExportAvailable()
@@ -180,6 +215,29 @@ export default function App() {
         setPage("interview");
       })
       .catch((err) => setPrepareError(String(err)));
+  };
+
+  const requestInterviewDeletion = (interview: Interview) => {
+    setDeleteError(null);
+    setDeleteCandidate(interview);
+  };
+
+  const confirmInterviewDeletion = async () => {
+    if (!deleteCandidate) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      await deleteInterview(deleteCandidate.id);
+      setInterviews((items) =>
+        items.filter((item) => item.id !== deleteCandidate.id),
+      );
+      setDeleteCandidate(null);
+      refreshInterviews();
+    } catch (err) {
+      setDeleteError(String(err));
+    } finally {
+      setDeleteBusy(false);
+    }
   };
 
   const importAndTranscribe = async () => {
@@ -407,6 +465,7 @@ export default function App() {
   };
 
   const handleStartRecording = async () => {
+    breadcrumb('clic "Demarrer l\'enregistrement"');
     setRecordingError(null);
     try {
       const parsedCount = Number.parseInt(expectedSpeakerCount, 10);
@@ -427,6 +486,7 @@ export default function App() {
   };
 
   const handlePauseRecording = async () => {
+    breadcrumb('clic "Pause"');
     try {
       await pauseRecording();
       setRecordingStatus("paused");
@@ -436,6 +496,7 @@ export default function App() {
   };
 
   const handleResumeRecording = async () => {
+    breadcrumb('clic "Reprendre"');
     try {
       await resumeRecording(selectedDevice || undefined);
       setRecordingStatus("recording");
@@ -445,6 +506,7 @@ export default function App() {
   };
 
   const handleStopRecording = async () => {
+    breadcrumb('clic "Arreter et terminer"');
     try {
       const detail = await stopRecording();
       setRecordingStatus("idle");
@@ -457,6 +519,27 @@ export default function App() {
     } catch (err) {
       setRecordingError(String(err));
     }
+  };
+
+  const handleCopyDiagnostics = async () => {
+    try {
+      await navigator.clipboard.writeText(diagnosticsText);
+    } catch {
+      const textarea = document.createElement("textarea");
+      textarea.value = diagnosticsText;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        document.execCommand("copy");
+      } catch {
+        // Nothing more we can do; the text is still visible on screen for
+        // the user to select and copy by hand.
+      }
+      document.body.removeChild(textarea);
+    }
+    setDiagnosticsCopied(true);
   };
 
   return (
@@ -624,12 +707,19 @@ export default function App() {
                 ) : (
                   <ul>
                     {interviews.map((interview) => (
-                      <li key={interview.id}>
+                      <li className="interviewRow" key={interview.id}>
                         <button
                           className="textButton"
                           onClick={() => openInterview(interview.id)}
                         >
                           {interview.title} — {interview.status}
+                        </button>
+                        <button
+                          className="dangerTextButton"
+                          aria-label={`Supprimer ${interview.title}`}
+                          onClick={() => requestInterviewDeletion(interview)}
+                        >
+                          Supprimer
                         </button>
                       </li>
                     ))}
@@ -641,6 +731,50 @@ export default function App() {
                 <span>·</span> Horodatages conservés
               </footer>
             </>
+          )}
+          {deleteCandidate && (
+            <div className="dialogBackdrop">
+              <section
+                className="confirmDialog"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="delete-dialog-title"
+                aria-describedby="delete-dialog-description"
+              >
+                <p className="eyebrow">SUPPRESSION DÉFINITIVE</p>
+                <h2 id="delete-dialog-title">Supprimer cet entretien ?</h2>
+                <p id="delete-dialog-description">
+                  « {deleteCandidate.title} » et sa copie audio privée seront
+                  supprimés de cet appareil. Les exports enregistrés ailleurs ne
+                  seront pas supprimés.
+                </p>
+                {deleteError && (
+                  <div className="notice" role="alert">
+                    Suppression impossible : {deleteError}
+                  </div>
+                )}
+                <div className="buttonRow dialogActions">
+                  <button
+                    ref={deleteCancelRef}
+                    className="secondary"
+                    disabled={deleteBusy}
+                    onClick={() => {
+                      setDeleteCandidate(null);
+                      setDeleteError(null);
+                    }}
+                  >
+                    Conserver l’entretien
+                  </button>
+                  <button
+                    className="dangerButton"
+                    disabled={deleteBusy}
+                    onClick={confirmInterviewDeletion}
+                  >
+                    {deleteBusy ? "Suppression…" : "Supprimer définitivement"}
+                  </button>
+                </div>
+              </section>
+            </div>
           )}
           {page === "example" && (
             <>
@@ -1259,6 +1393,21 @@ export default function App() {
                   Aucun téléchargement à effectuer. Le modèle est fourni avec
                   l’installation ; vos fichiers audio restent sur cet appareil.
                 </p>
+              </section>
+              <section className="settingsPanel">
+                <h2>Diagnostics</h2>
+                <p className="muted">
+                  Journal technique local (jamais l’audio ni le texte transcrit)
+                  : utile pour signaler un problème. Rien n’est envoyé
+                  automatiquement, ce n’est que sur cet écran.
+                </p>
+                <pre className="diagnosticsLog">
+                  {diagnosticsText ||
+                    "Aucun evenement journalise pour l’instant."}
+                </pre>
+                <button className="secondary" onClick={handleCopyDiagnostics}>
+                  {diagnosticsCopied ? "Copié ✓" : "Copier les journaux"}
+                </button>
               </section>
             </>
           )}

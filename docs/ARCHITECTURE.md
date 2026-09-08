@@ -36,7 +36,7 @@ Le temps reel est une transcription incrementale avec une faible latence, pas un
 - Capture: `cpal` (verifie par compilation reelle et par un test materiel reel sur ce poste, backend ALSA sous Linux, Oboe sous Android). `cpal::Stream` n'est pas `Send`: il vit sur un thread dedie (`capture::session::run_capture_thread`), controle depuis le reste de l'application uniquement via un canal de messages (pause/reprise/arret) - jamais deplace entre threads.
 - VAD: seuil d'energie RMS avec hysteresis haut/bas et un delai de tolerance ("hangover") avant de considerer la parole terminee, pour ne pas couper un mot sur un bref creux (`capture::vad`). Pas de modele ML: suffisant pour trouver les silences qui delimitent un bloc, pas pour une detection fine mot-a-mot.
 - Decoupage/stabilisation: pas de vrai flux incremental - `whisper-rs` n'expose aucune API de resultat partiel (`state.full()` traite toujours un buffer complet). A la place (`capture::chunker`), l'audio s'accumule jusqu'a un silence suffisant apres de la parole, ou un plafond de duree de securite (30s) en l'absence de silence; le bloc ferme est alors transcrit et diarise d'un coup, comme un mini pipeline a posteriori. Un seul `diarization::Clusterer` vit pour toute la session (pas un par bloc), pour que l'identite des locuteurs reste stable dans la duree - point d'attention principal en reutilisant le code de la Phase 3. Pendant qu'un bloc s'accumule sans silence, l'interface affiche un indicateur "transcription en cours" plutot qu'un vrai texte provisoire mot-a-mot: interpretation pragmatique de "texte provisoire puis consolidation" qui evite la complexite d'un moteur de diff incremental.
-- Sauvegarde incrementale: `hound` ecrit un WAV valide en continu dans le stockage prive de l'app (meme repertoire que les fichiers importes en Phase 1). Aucune logique de recuperation dediee: un entretien interrompu (statut reste `transcribing`, reutilise plutot qu'un nouveau statut `recording`) est repris via le pipeline a posteriori deja existant sur le fichier partiel - verifie reellement (voir ci-dessous), pas seulement suppose.
+- Sauvegarde incrementale: `hound` ecrit un WAV valide en continu dans le stockage prive de l'app (meme repertoire que les fichiers importes en Phase 1). Le WAV partiel est relisible et les metadonnees/segments stabilises survivent a la reouverture de SQLite. Limite constatee lors de l'ajout du test transversal de recuperation: la reprise applicative n'est pas encore cablee, car le pipeline a posteriori refuse actuellement un entretien reste au statut `transcribing`. La recuperation des donnees est donc prouvee, pas encore le parcours utilisateur complet de reprise.
 - Pause/reprise/changement de peripherique: la pause utilise `Stream::pause()`/`play()` de cpal (pas de fermeture/reouverture, plus simple et plus rapide) tant que le peripherique ne change pas; un changement de peripherique explicite a la reprise reconstruit un nouveau flux (et clot proprement le bloc en cours d'accumulation sur l'ancien peripherique plutot que de le perdre silencieusement). Un peripherique disparu remonte une erreur claire au frontend, sans bascule automatique.
 - Validation materielle reelle (pas seulement des tests synthetiques): `capture::session::tests::real_microphone_capture_produces_a_valid_recoverable_wav` (`#[ignore]`, execute manuellement le 07/09/2026 sur ce poste, peripherique ALSA `ALC3204 Analog`) ouvre le peripherique par defaut, capture ~4s, verifie qu'au moins un evenement de niveau reel arrive, teste pause/reprise, puis relit le WAV produit avec `audio::decode::decode_to_mono_pcm16k` - la meme fonction que le pipeline a posteriori. Preuve concrete, pas juste theorique, que la recuperation apres interruption fonctionne.
 - Limites non couvertes par cette implementation: aucune mesure de latence/consommation avec de la parole reelle (necessite un humain qui parle dans le microphone, impossible a simuler dans l'environnement de developpement utilise ici); pas de test de changement de peripherique sur materiel reel (un seul microphone disponible sur ce poste); support Android non tente (contrairement a `whisper-rs`, deja compile et teste sur Android - voir "Strategie Whisper"). Ces points restent a couvrir avant de considerer la Phase 4 entierement close (voir `docs/ROADMAP.md`).
@@ -133,6 +133,38 @@ Pistes d'amelioration future, non engagees ici:
 - Permissions microphone demandees au moment utile.
 - Aucun trafic reseau pendant une transcription locale, hors telechargement explicite d'un modele.
 - Suppression coordonnee de la base, de l'audio, des caches et des exports geres.
+
+### Diagnostics locaux
+
+Face a un bug non reproductible ici (materiel/installation reelle de
+l'utilisateur), l'application tient un journal technique local minimal:
+`src-tauri/src/diagnostics.rs`, un fichier texte dans
+`<donnees de l'app>/logs/interviewscribe.log` (rotation simple a 5 Mo, un seul
+fichier de sauvegarde `.log.1`), lisible et copiable depuis Reglages >
+Diagnostics. Ce fichier ne quitte jamais la machine - aucun envoi automatique,
+seulement une lecture/copie manuelle par l'utilisateur.
+
+Ce qui y est ecrit, precisement:
+
+- Le nom de chaque commande liee a l'enregistrement (demarrer/pause/reprendre/
+  arreter), le peripherique choisi, la verification des modeles, l'ouverture
+  du flux audio - jamais son contenu.
+- Tout message d'erreur `AppError` (point central: `error.rs::impl Serialize
+  for AppError`, couvre automatiquement toutes les commandes) - ce sont deja
+  des messages techniques (erreurs whisper-rs/IO/codec/mutex), jamais du texte
+  transcrit.
+- Les panics (hook installe dans `diagnostics::init`), utile pour les threads
+  de capture/traitement qui tournent hors du chemin `Result` normal.
+- Cote frontend (`apps/client/src/diagnostics.ts`), les clics sur les
+  commandes d'enregistrement et les erreurs JS non interceptees.
+
+Ce qui n'y est **jamais** ecrit: l'audio, le texte d'un segment ou d'une
+transcription, une empreinte vocale, ou un nom de locuteur saisi par
+l'utilisateur - `AppError`, seule source de messages d'erreur journalises, a
+ete audite (`grep -rn "AppError::"`) pour confirmer qu'aucun message
+n'interpole jamais ce type de contenu. `scripts/privacy.test.mjs` interdit par
+ailleurs `log::`/`tracing::` en production: ce mecanisme est volontairement
+un fichier fait maison, pas un plugin de logging generique.
 
 
 ## Modele fourni avec l’application
