@@ -114,6 +114,13 @@ export function inspectRecoveryCandidate(
   return invoke("inspect_recovery_candidate", { interviewId });
 }
 
+export function recoverInterview(
+  interviewId: number,
+  modelId?: string,
+): Promise<InterviewDetail> {
+  return invoke("recover_interview", { interviewId, modelId });
+}
+
 export function getInterview(interviewId: number): Promise<InterviewDetail> {
   return invoke("get_interview", { interviewId });
 }

@@ -112,6 +112,76 @@ fn inspect_recovery_candidate(
 }
 
 #[tauri::command]
+async fn recover_interview(
+    app: tauri::AppHandle,
+    interview_id: i64,
+    model_id: Option<String>,
+) -> Result<db::models::InterviewDetail, AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let db = app.state::<DbState>();
+        let recording = app.state::<RecordingState>();
+        if recording
+            .0
+            .lock()
+            .map_err(|_| AppError::Audio("etat d'enregistrement indisponible".into()))?
+            .as_ref()
+            .is_some_and(|active| active.interview_id == interview_id)
+        {
+            return Err(AppError::Audio(
+                "recuperation refusee: l'enregistrement est encore actif".into(),
+            ));
+        }
+        recover_interview_local(&app, &db, interview_id, model_id)
+    })
+    .await
+    .map_err(|err| AppError::Transcription(format!("recuperation interrompue: {err}")))?
+}
+
+fn recover_interview_local(
+    app: &tauri::AppHandle,
+    db: &DbState,
+    interview_id: i64,
+    model_id: Option<String>,
+) -> Result<db::models::InterviewDetail, AppError> {
+    let audio_dir = app_data_subdir(app, "audio")?;
+    let conn = lock_db(db)?;
+    let inspection = recovery::inspect(&conn, interview_id, &audio_dir)?;
+    let interview = db::interviews::get(&conn, interview_id)?;
+    let existing = db::segments::list_for_interview(&conn, interview_id)?;
+    drop(conn);
+
+    let pcm = audio::decode::decode_to_mono_pcm16k(Path::new(&interview.audio_path))?;
+    let transcription::model::ModelStatus::Ready { path, .. } =
+        transcription::model::ensure_manifest(
+            app,
+            transcription::model::selected_whisper_manifest(model_id.as_deref())?,
+        )?;
+    let transcriber = transcription::whisper_cpp::WhisperCppTranscriber::load(Path::new(&path))?;
+    let recovered = recovery::transcribe_remainder(
+        &transcriber,
+        &pcm,
+        interview.language.as_deref(),
+        inspection.last_stable_end_ms,
+        &existing,
+    )?;
+
+    let new_segments: Vec<db::segments::NewSegment> = recovered
+        .into_iter()
+        .map(|segment| db::segments::NewSegment {
+            speaker_id: None,
+            start_ms: segment.start_ms,
+            end_ms: segment.end_ms,
+            raw_text: segment.text,
+            confidence: segment.confidence,
+        })
+        .collect();
+    let conn = lock_db(db)?;
+    db::segments::insert_batch(&conn, interview_id, &new_segments)?;
+    db::interviews::update_status(&conn, interview_id, "transcribed", None)?;
+    db::get_detail(&conn, interview_id)
+}
+
+#[tauri::command]
 fn get_interview(
     db: tauri::State<DbState>,
     interview_id: i64,
@@ -883,6 +953,7 @@ pub fn run() {
             list_interviews,
             list_recovery_candidates,
             inspect_recovery_candidate,
+            recover_interview,
             get_interview,
             delete_interview,
             ensure_whisper_model,

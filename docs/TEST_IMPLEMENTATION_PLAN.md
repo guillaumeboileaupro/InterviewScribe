@@ -45,11 +45,11 @@ supprimer les segments bruts deja stabilises et sans creer de doublons.
 - [x] 1.3 Exposer une commande de recuperation qui valide d'abord le WAV partiel.
 - [x] 1.4 Conserver tous les segments existants et calculer la derniere frontiere
   audio stabilisee.
-- [ ] 1.5 Transcrire uniquement la partie non stabilisee, avec timestamps
+- [x] 1.5 Transcrire uniquement la partie non stabilisee, avec timestamps
   recalages et garde anti-doublon.
   - [x] Decouper le PCM exactement apres la derniere frontiere stable.
   - [x] Recaler les timestamps et filtrer les doublons de frontiere.
-  - [ ] Cabler ces regles a la commande Whisper de recuperation.
+  - [x] Cabler ces regles a la commande Whisper de recuperation.
 - [ ] 1.6 Reconstituer une attribution de locuteur prudente : attribution
   incertaine plutot que fusion forcee si l'identite ne peut pas etre reliee.
 - [ ] 1.7 Ajouter l'action UI `Recuperer`, ses etats occupes/erreur et une option
@@ -146,3 +146,4 @@ et ne depend d'aucune donnee sensible.
 | 2026-09-08 | 1.1-1.2 | Etat derive et commande `list_recovery_candidates` implementes et testes. |
 | 2026-09-08 | 1.3-1.4 | Inspection du WAV prive, rejet des fichiers invalides et frontiere stable implementes et testes. |
 | 2026-09-08 | 1.5 (partiel) | Decoupe PCM, recalage temporel et garde anti-doublon implementes comme regles pures testees. |
+| 2026-09-08 | 1.5 | Commande Whisper de reprise cablee au suffixe audio et persistance additive implementee. |

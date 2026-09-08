@@ -23,7 +23,6 @@ pub fn pcm_after_boundary(pcm: &[f32], boundary_ms: i64) -> &[f32] {
 /// Rebases Whisper timestamps from the recovered suffix to the interview
 /// timeline and rejects anything wholly covered by stable evidence. Exact
 /// duplicate boundary text is also discarded, protecting repeated recovery.
-#[cfg_attr(not(test), allow(dead_code))]
 pub fn rebase_and_filter(
     raw: Vec<crate::transcription::RawSegment>,
     boundary_ms: i64,
@@ -46,6 +45,17 @@ pub fn rebase_and_filter(
             })
         })
         .collect()
+}
+
+pub fn transcribe_remainder<T: crate::transcription::Transcriber>(
+    transcriber: &T,
+    pcm: &[f32],
+    language: Option<&str>,
+    boundary_ms: i64,
+    existing: &[db::models::Segment],
+) -> Result<Vec<crate::transcription::RawSegment>, AppError> {
+    let raw = transcriber.transcribe(pcm_after_boundary(pcm, boundary_ms), language)?;
+    Ok(rebase_and_filter(raw, boundary_ms, existing))
 }
 
 /// Validates an interrupted recording before recovery. This is deliberately
@@ -238,5 +248,21 @@ mod tests {
         assert_eq!(recovered[0].start_ms, 1_100);
         assert_eq!(recovered[0].end_ms, 1_500);
         assert_eq!(recovered[0].text, "Suite");
+    }
+
+    #[test]
+    fn transcribes_only_the_unstable_suffix() {
+        let transcriber = crate::transcription::tests_support::FakeTranscriber {
+            segments: vec![crate::transcription::RawSegment {
+                start_ms: 0,
+                end_ms: 200,
+                text: "Suite".into(),
+                confidence: None,
+            }],
+        };
+        let pcm = vec![0.0; 16_000];
+        let recovered = transcribe_remainder(&transcriber, &pcm, None, 750, &[]).unwrap();
+        assert_eq!(recovered[0].start_ms, 750);
+        assert_eq!(recovered[0].end_ms, 950);
     }
 }
