@@ -32,10 +32,19 @@ impl Transcriber for WhisperCppTranscriber {
             .create_state()
             .map_err(|err| AppError::Transcription(format!("echec de creation d'etat: {err}")))?;
 
-        let mut params = FullParams::new(SamplingStrategy::BeamSearch {
-            beam_size: 5,
-            patience: -1.0,
-        });
+        // BeamSearch{beam_size: 5} was the previous choice here, but
+        // whisper-rs's own doc comment on that field is explicit: "at the
+        // cost of exponential CPU time." That combined with sustained heavy
+        // system load is the confirmed real-world cause of transcription
+        // effectively never finishing (180s+ observed for a 3s clip even
+        // with the smallest bundled model - see
+        // docs/TEST_IMPLEMENTATION_PLAN.md item 2.4, and real user reports
+        // of the same on both installed .deb and .exe builds). `patience`
+        // was never doing anything either way: whisper-rs documents it as
+        // "not implemented in whisper.cpp". Greedy{best_of: 5} keeps the
+        // same "consider 5 candidates" intent at the cost whisper.cpp is
+        // actually built for.
+        let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 5 });
         params.set_language(language);
         params.set_print_special(false);
         params.set_print_progress(false);
@@ -80,6 +89,37 @@ mod tests {
     fn converts_centiseconds_to_milliseconds() {
         assert_eq!(centiseconds_to_ms(0), 0);
         assert_eq!(centiseconds_to_ms(150), 1_500);
+    }
+
+    /// One-off manual timing check for the BeamSearch -> Greedy switch (see
+    /// the comment on `transcribe`): confirms a short clip actually finishes
+    /// in a reasonable time instead of the 180s+ observed with beam search.
+    /// Not a permanent fixture of the suite - temporary verification only.
+    ///
+    ///   INTERVIEWSCRIBE_TEST_MODEL=/path/to/ggml-base-q5_1.bin \
+    ///   INTERVIEWSCRIBE_TEST_WAV=/path/to/fixture.wav \
+    ///   cargo test --manifest-path src-tauri/Cargo.toml --lib -- --ignored --nocapture timing_check
+    #[test]
+    #[ignore]
+    fn timing_check() {
+        let model_path = std::env::var("INTERVIEWSCRIBE_TEST_MODEL")
+            .expect("set INTERVIEWSCRIBE_TEST_MODEL to a local ggml model path");
+        let wav_path = std::env::var("INTERVIEWSCRIBE_TEST_WAV")
+            .expect("set INTERVIEWSCRIBE_TEST_WAV to a local wav path");
+
+        let pcm = crate::audio::decode::decode_to_mono_pcm16k(std::path::Path::new(&wav_path))
+            .expect("failed to decode test wav");
+        let transcriber = WhisperCppTranscriber::load(std::path::Path::new(&model_path))
+            .expect("failed to load model");
+        let start = std::time::Instant::now();
+        let segments = transcriber.transcribe(&pcm, None).expect("transcribe");
+        println!(
+            "timing_check: {} samples ({:.1}s audio) -> {} segments in {:?}",
+            pcm.len(),
+            pcm.len() as f64 / 16_000.0,
+            segments.len(),
+            start.elapsed()
+        );
     }
 
     /// Manual end-to-end smoke test against a real model and real speech audio.
