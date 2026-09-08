@@ -152,6 +152,53 @@ fn active_region(regions: &[SpeakerRegion], time_ms: i64) -> Option<&SpeakerRegi
         .find(|region| region.start_ms <= time_ms && time_ms < region.end_ms)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TimedText {
+    pub start_ms: i64,
+    pub end_ms: i64,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BoundaryMetrics {
+    pub duplicate_count: usize,
+    pub compared_segments: usize,
+    pub mean_start_drift_ms: f64,
+    pub mean_end_drift_ms: f64,
+    pub max_drift_ms: i64,
+}
+
+/// Measures consecutive overlapping duplicates and timestamp drift. Reference
+/// and hypothesis segments are paired in chronological order after callers
+/// have performed transcript alignment.
+pub fn boundary_metrics(reference: &[TimedText], hypothesis: &[TimedText]) -> BoundaryMetrics {
+    let duplicate_count = hypothesis
+        .windows(2)
+        .filter(|pair| {
+            normalize_text(&pair[0].text) == normalize_text(&pair[1].text)
+                && pair[1].start_ms < pair[0].end_ms
+        })
+        .count();
+    let compared_segments = reference.len().min(hypothesis.len());
+    let mut start_total = 0i64;
+    let mut end_total = 0i64;
+    let mut max_drift = 0i64;
+    for (expected, actual) in reference.iter().zip(hypothesis) {
+        let start = expected.start_ms.abs_diff(actual.start_ms) as i64;
+        let end = expected.end_ms.abs_diff(actual.end_ms) as i64;
+        start_total = start_total.saturating_add(start);
+        end_total = end_total.saturating_add(end);
+        max_drift = max_drift.max(start).max(end);
+    }
+    BoundaryMetrics {
+        duplicate_count,
+        compared_segments,
+        mean_start_drift_ms: start_total as f64 / compared_segments.max(1) as f64,
+        mean_end_drift_ms: end_total as f64 / compared_segments.max(1) as f64,
+        max_drift_ms: max_drift,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -269,5 +316,68 @@ mod tests {
         let metric = diarization_metrics(&[], &[]);
         assert_eq!(metric.der, 0.0);
         assert_eq!(metric.uncertain_coverage, 0.0);
+    }
+
+    #[test]
+    fn boundary_metrics_detect_overlapping_repeated_text() {
+        let hypothesis = vec![
+            TimedText {
+                start_ms: 0,
+                end_ms: 1_000,
+                text: "Bonjour !".into(),
+            },
+            TimedText {
+                start_ms: 900,
+                end_ms: 1_500,
+                text: "bonjour".into(),
+            },
+            TimedText {
+                start_ms: 1_500,
+                end_ms: 2_000,
+                text: "Suite".into(),
+            },
+        ];
+        assert_eq!(boundary_metrics(&[], &hypothesis).duplicate_count, 1);
+    }
+
+    #[test]
+    fn boundary_metrics_report_mean_and_max_timestamp_drift() {
+        let reference = vec![
+            TimedText {
+                start_ms: 100,
+                end_ms: 500,
+                text: "A".into(),
+            },
+            TimedText {
+                start_ms: 600,
+                end_ms: 1_000,
+                text: "B".into(),
+            },
+        ];
+        let hypothesis = vec![
+            TimedText {
+                start_ms: 120,
+                end_ms: 540,
+                text: "A".into(),
+            },
+            TimedText {
+                start_ms: 660,
+                end_ms: 990,
+                text: "B".into(),
+            },
+        ];
+        let metric = boundary_metrics(&reference, &hypothesis);
+        assert_eq!(metric.compared_segments, 2);
+        assert_eq!(metric.mean_start_drift_ms, 40.0);
+        assert_eq!(metric.mean_end_drift_ms, 25.0);
+        assert_eq!(metric.max_drift_ms, 60);
+    }
+
+    #[test]
+    fn empty_boundaries_have_finite_zero_drift() {
+        let metric = boundary_metrics(&[], &[]);
+        assert_eq!(metric.mean_start_drift_ms, 0.0);
+        assert_eq!(metric.mean_end_drift_ms, 0.0);
+        assert_eq!(metric.max_drift_ms, 0);
     }
 }
