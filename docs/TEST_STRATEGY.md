@@ -85,8 +85,8 @@ de `cargo test` normal et leur execution doit etre rapportee separement.
 | TRN-02 | Aucun doublon aux frontieres de fenetres | Unit + integration | Toutes | Automatise partiel | Chunker couvert; ajouter oracle texte sur chevauchements successifs. |
 | EXP-01 | TXT, MD, JSON, SRT, VTT, DOCX et PDF restent lisibles | Unit + integration | Desktop | Automatise | Tests Rust; conserver validation structurelle et texte extrait. |
 | EXP-02 | DOC absent ne bloque aucun autre export | Unit + fonctionnel | Desktop | Automatise | Backend et bouton desactive couverts; conversion LibreOffice reste opt-in. |
-| UI-01 | Etats vide, chargement, enregistrement, pause, erreur et termine | Component + E2E | Toutes | Automatise partiel | Plusieurs parcours UI couverts; chargement lent, reprise et longs transcripts a ajouter. |
-| UI-02 | Clavier, focus visible, WCAG AA et cible tactile 44 px | Component + audit | Toutes | Automatise partiel | Dialogue de suppression: focus sur action sure et fermeture avec Echap testes; cibles 44 px en CSS. Ajouter axe et audit visuel clair/sombre/mobile. |
+| UI-01 | Etats vide, chargement, enregistrement, pause, erreur et termine | Component + E2E | Toutes | Automatise partiel | Parcours UI couverts; Axe couvre vide, enregistrement et erreur avec 40 segments. Chargement lent et reprise restent a ajouter. |
+| UI-02 | Clavier, focus visible, WCAG AA et cible tactile 44 px | Component + audit | Toutes | Automatise partiel | Axe couvre bibliotheque, enregistrement, entretien long en erreur et dialogue; focus sur action sure/Echap testes; cibles 44 px en CSS. Contraste et audit visuel clair/sombre/mobile restent manuels. |
 | PRIV-01 | Aucun contenu sensible dans les logs ou le reseau | Integration + audit | Toutes | Automatise partiel | CSP limite `connect-src` a IPC; sources de production sans client reseau ni journalisation. Ajouter un test dynamique avec proxy bloque. |
 | DEL-01 | Suppression coordonnee DB, audio, cache et exports geres | Integration + E2E | Toutes | Automatise | Backend: cascade SQLite et audio prive; chemin externe refuse et rollback testes. UI: confirmation, succes et erreur testes. Les exports choisis par l'utilisateur sont explicitement hors gestion. |
 | PKG-01 | Installation neuve et desinstallation du paquet | Packaging | Linux/Windows | Valide en CI | `.deb` et NSIS verifies silencieusement sur runners natifs. |
@@ -149,7 +149,8 @@ et consenti. Le rapport conserve seulement mesures et resultat, jamais l'audio.
 
 1. Installer un harnais E2E Tauri desktop et couvrir import, correction,
    nettoyage, intervenants et export.
-2. Ajouter les tests clavier/accessibilite et les etats UI manquants.
+2. Etendre Axe aux etats UI manquants et executer l'audit visuel de contraste
+   en clair, sombre et mobile.
 3. Tester la mise a niveau N-1 vers N des paquets Linux et Windows.
 4. Executer import `content://` et transcription sur emulateur Android hors
    ligne, puis sur appareil physique.
