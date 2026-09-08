@@ -138,6 +138,11 @@ et consenti. Le rapport conserve seulement mesures et resultat, jamais l'audio.
 
 ## Backlog d'implementation
 
+L'ordre d'execution detaille, les cases et le journal de preuves sont maintenus
+dans [`TEST_IMPLEMENTATION_PLAN.md`](TEST_IMPLEMENTATION_PLAN.md). Ce document
+de strategie definit la couverture attendue; le plan d'implementation definit
+ce qui doit etre fait ensuite, et dans quel ordre.
+
 ### P0 - invariants et perte de donnees
 
 1. Implementer puis tester la reprise applicative d'une capture restee au

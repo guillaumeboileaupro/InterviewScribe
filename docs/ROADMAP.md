@@ -88,3 +88,5 @@ Une tache n'est terminee que si elle comporte des tests pertinents, une document
 La couverture, les niveaux de preuve et les validations encore necessaires sont
 suivis dans [`TEST_STRATEGY.md`](TEST_STRATEGY.md). Les priorites P0 de cette
 strategie font partie des criteres de sortie de la prochaine version.
+Leur execution etape par etape est suivie dans
+[`TEST_IMPLEMENTATION_PLAN.md`](TEST_IMPLEMENTATION_PLAN.md).

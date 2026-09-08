@@ -65,6 +65,29 @@ pub fn list(conn: &Connection) -> Result<Vec<Interview>, AppError> {
     Ok(out)
 }
 
+/// Returns realtime sessions whose persisted status still says
+/// `transcribing` but which are not the recording currently owned by this
+/// process. This derived state distinguishes an interrupted session after a
+/// restart without rewriting its evidence or pretending it completed.
+pub fn list_recovery_candidates(
+    conn: &Connection,
+    active_interview_id: Option<i64>,
+) -> Result<Vec<Interview>, AppError> {
+    let mut stmt = conn.prepare(
+        "SELECT id, title, language, mode, audio_path, status, error_message, created_at, updated_at
+         FROM interview
+         WHERE mode = 'realtime' AND status = 'transcribing'
+           AND (?1 IS NULL OR id != ?1)
+         ORDER BY created_at DESC",
+    )?;
+    let rows = stmt.query_map(params![active_interview_id], row_to_interview)?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
 pub fn set_audio_path(conn: &Connection, id: i64, audio_path: &str) -> Result<(), AppError> {
     conn.execute(
         "UPDATE interview SET audio_path = ?1, updated_at = ?2 WHERE id = ?3",
@@ -187,6 +210,34 @@ mod tests {
         create(&conn, "Second", None, "/audio/2.wav").unwrap();
         let all = list(&conn).unwrap();
         assert_eq!(all.len(), 2);
+    }
+
+    #[test]
+    fn recovery_candidates_only_include_inactive_interrupted_realtime_sessions() {
+        let conn = setup();
+        let interrupted = create_realtime(&conn, "Interrompu", "/audio/1.wav").unwrap();
+        let active = create_realtime(&conn, "Actif", "/audio/2.wav").unwrap();
+        create(&conn, "Import normal", None, "/audio/3.wav").unwrap();
+        let finished = create_realtime(&conn, "Termine", "/audio/4.wav").unwrap();
+        update_status(&conn, finished.id, "transcribed", None).unwrap();
+
+        let candidates = list_recovery_candidates(&conn, Some(active.id)).unwrap();
+
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].id, interrupted.id);
+    }
+
+    #[test]
+    fn every_transcribing_realtime_session_is_recoverable_after_restart() {
+        let conn = setup();
+        let first = create_realtime(&conn, "Premier", "/audio/1.wav").unwrap();
+        let second = create_realtime(&conn, "Second", "/audio/2.wav").unwrap();
+
+        let candidates = list_recovery_candidates(&conn, None).unwrap();
+        let ids: Vec<i64> = candidates.iter().map(|interview| interview.id).collect();
+
+        assert!(ids.contains(&first.id));
+        assert!(ids.contains(&second.id));
     }
 
     #[test]

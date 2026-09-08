@@ -86,6 +86,10 @@ export function listInterviews(): Promise<Interview[]> {
   return invoke("list_interviews");
 }
 
+export function listRecoveryCandidates(): Promise<Interview[]> {
+  return invoke("list_recovery_candidates");
+}
+
 export function getInterview(interviewId: number): Promise<InterviewDetail> {
   return invoke("get_interview", { interviewId });
 }

@@ -72,6 +72,21 @@ fn list_interviews(db: tauri::State<DbState>) -> Result<Vec<db::models::Intervie
 }
 
 #[tauri::command]
+fn list_recovery_candidates(
+    db: tauri::State<DbState>,
+    recording: tauri::State<RecordingState>,
+) -> Result<Vec<db::models::Interview>, AppError> {
+    let active_interview_id = recording
+        .0
+        .lock()
+        .map_err(|_| AppError::Audio("etat d'enregistrement indisponible".into()))?
+        .as_ref()
+        .map(|active| active.interview_id);
+    let conn = lock_db(&db)?;
+    db::interviews::list_recovery_candidates(&conn, active_interview_id)
+}
+
+#[tauri::command]
 fn get_interview(
     db: tauri::State<DbState>,
     interview_id: i64,
@@ -826,6 +841,7 @@ pub fn run() {
             application_status,
             import_interview,
             list_interviews,
+            list_recovery_candidates,
             get_interview,
             delete_interview,
             ensure_whisper_model,
