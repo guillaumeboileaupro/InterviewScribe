@@ -79,6 +79,16 @@ export type ModelStatus = {
   size_mb: number;
 };
 
+export interface ModelOption {
+  id: string;
+  name: string;
+  size_mb: number;
+}
+
+export function listAvailableModels(): Promise<ModelOption[]> {
+  return invoke("list_available_models");
+}
+
 export type ExportFormat =
   "txt" | "markdown" | "json" | "srt" | "vtt" | "docx" | "pdf";
 
@@ -119,8 +129,13 @@ export function ensureWhisperModel(): Promise<ModelStatus> {
 export function transcribeInterview(
   interviewId: number,
   expectedSpeakerCount?: number,
+  modelId?: string,
 ): Promise<InterviewDetail> {
-  return invoke("transcribe_interview", { interviewId, expectedSpeakerCount });
+  return invoke("transcribe_interview", {
+    interviewId,
+    expectedSpeakerCount,
+    modelId,
+  });
 }
 
 export function renameSpeaker(
@@ -215,11 +230,13 @@ export function startRecording(
   title: string,
   deviceName?: string,
   expectedSpeakerCount?: number,
+  modelId?: string,
 ): Promise<Interview> {
   return invoke("start_recording", {
     title,
     deviceName,
     expectedSpeakerCount,
+    modelId,
   });
 }
 

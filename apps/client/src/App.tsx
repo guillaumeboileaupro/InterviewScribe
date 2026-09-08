@@ -11,6 +11,7 @@ import {
   exportInterviewDoc,
   getInterview,
   importInterview,
+  listAvailableModels,
   listInputDevices,
   listInterviews,
   mergeSpeakers,
@@ -28,6 +29,7 @@ import {
   type ExportFormat,
   type Interview,
   type InterviewDetail,
+  type ModelOption,
   type ModelStatus,
   type Segment,
   type Speaker,
@@ -106,6 +108,9 @@ export default function App() {
   const [speakerDraftName, setSpeakerDraftName] = useState("");
   const [mergeTarget, setMergeTarget] = useState<Record<number, string>>({});
 
+  const [availableModels, setAvailableModels] = useState<ModelOption[]>([]);
+  const [selectedModelId, setSelectedModelId] = useState("");
+
   const [inputDevices, setInputDevices] = useState<string[]>([]);
   const [selectedDevice, setSelectedDevice] = useState("");
   const [recordingStatus, setRecordingStatus] = useState<
@@ -171,6 +176,12 @@ export default function App() {
       listInputDevices()
         .then(setInputDevices)
         .catch(() => setInputDevices([]));
+      listAvailableModels()
+        .then((models) => {
+          setAvailableModels(models);
+          setSelectedModelId((current) => current || models[0]?.id || "");
+        })
+        .catch(() => setAvailableModels([]));
     }
   }, [page]);
 
@@ -273,6 +284,7 @@ export default function App() {
         Number.isFinite(parsedCount) && parsedCount > 0
           ? parsedCount
           : undefined,
+        selectedModelId || undefined,
       );
       setCurrentInterview(detail);
       setPage("interview");
@@ -475,6 +487,7 @@ export default function App() {
         Number.isFinite(parsedCount) && parsedCount > 0
           ? parsedCount
           : undefined,
+        selectedModelId || undefined,
       );
       setRecordingInterviewId(interview.id);
       setRecordingSegments([]);
@@ -1162,6 +1175,19 @@ export default function App() {
                       Enregistrer avec le microphone
                     </option>
                     <option value="file">Importer un fichier audio</option>
+                  </select>
+                </label>
+                <label className="field">
+                  Modèle de transcription
+                  <select
+                    value={selectedModelId}
+                    onChange={(event) => setSelectedModelId(event.target.value)}
+                  >
+                    {availableModels.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.name} · {model.size_mb} Mo
+                      </option>
+                    ))}
                   </select>
                 </label>
                 {source === "file" ? (

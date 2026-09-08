@@ -481,6 +481,87 @@ describe("App", () => {
     ).toBeInTheDocument();
   });
 
+  it("lets the user pick a smaller transcription model before importing", async () => {
+    let transcribeArguments: unknown;
+    mockIPC((cmd, args) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten" || cmd === "client_log") return null;
+      switch (cmd) {
+        case "list_interviews":
+          return [];
+        case "list_available_models":
+          return [
+            {
+              id: "large-v3-turbo",
+              name: "Whisper Large v3 Turbo (Q5_0)",
+              size_mb: 575,
+            },
+            { id: "small", name: "Whisper Small (Q5_1)", size_mb: 191 },
+            { id: "base", name: "Whisper Base (Q5_1)", size_mb: 60 },
+          ];
+        case "ensure_whisper_model":
+          return {
+            state: "Ready",
+            path: "/models/ggml-large-v3-turbo-q5_0.bin",
+          };
+        case "plugin:dialog|open":
+          return "/home/user/entretien.wav";
+        case "import_interview":
+          return {
+            id: 8,
+            title: "entretien.wav",
+            language: null,
+            mode: "posteriori",
+            audio_path: "/audio/8.wav",
+            status: "imported",
+            error_message: null,
+            created_at: "0",
+            updated_at: "0",
+          };
+        case "transcribe_interview":
+          transcribeArguments = args;
+          return {
+            interview: {
+              id: 8,
+              title: "entretien.wav",
+              language: null,
+              mode: "posteriori",
+              audio_path: "/audio/8.wav",
+              status: "transcribed",
+              error_message: null,
+              created_at: "0",
+              updated_at: "0",
+            },
+            speakers: [],
+            segments: [],
+          };
+        default:
+          throw new Error(`unexpected command: ${cmd}`);
+      }
+    });
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /Nouvel entretien/ }));
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "Mode de capture" }),
+      { target: { value: "file" } },
+    );
+    const modelSelect = await screen.findByRole("combobox", {
+      name: "Modèle de transcription",
+    });
+    expect(
+      screen.getByRole("option", { name: "Whisper Small (Q5_1) · 191 Mo" }),
+    ).toBeInTheDocument();
+    fireEvent.change(modelSelect, { target: { value: "base" } });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Choisir un fichier audio" }),
+    );
+
+    await screen.findByRole("heading", { level: 1, name: "entretien.wav" });
+    expect(transcribeArguments).toMatchObject({ modelId: "base" });
+  });
+
   it("cleans a segment and shows the removed hesitation struck through", async () => {
     mockIPC((cmd) => {
       if (cmd === "plugin:event|listen") return 1;

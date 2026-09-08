@@ -14,6 +14,40 @@ pub struct RecoveryInspection {
     pub segment_count: usize,
 }
 
+pub fn pcm_after_boundary(pcm: &[f32], boundary_ms: i64) -> &[f32] {
+    let boundary_ms = boundary_ms.max(0) as usize;
+    let sample = boundary_ms.saturating_mul(audio::decode::WHISPER_SAMPLE_RATE as usize) / 1_000;
+    &pcm[sample.min(pcm.len())..]
+}
+
+/// Rebases Whisper timestamps from the recovered suffix to the interview
+/// timeline and rejects anything wholly covered by stable evidence. Exact
+/// duplicate boundary text is also discarded, protecting repeated recovery.
+#[cfg_attr(not(test), allow(dead_code))]
+pub fn rebase_and_filter(
+    raw: Vec<crate::transcription::RawSegment>,
+    boundary_ms: i64,
+    existing: &[db::models::Segment],
+) -> Vec<crate::transcription::RawSegment> {
+    let boundary_ms = boundary_ms.max(0);
+    raw.into_iter()
+        .map(|segment| crate::transcription::RawSegment {
+            start_ms: segment.start_ms.saturating_add(boundary_ms),
+            end_ms: segment.end_ms.saturating_add(boundary_ms),
+            text: segment.text,
+            confidence: segment.confidence,
+        })
+        .filter(|segment| segment.end_ms > boundary_ms)
+        .filter(|segment| {
+            !existing.iter().any(|stable| {
+                stable.raw_text.trim() == segment.text.trim()
+                    && segment.start_ms < stable.end_ms
+                    && segment.end_ms > stable.start_ms
+            })
+        })
+        .collect()
+}
+
 /// Validates an interrupted recording before recovery. This is deliberately
 /// read-only: existing segments (including immutable `raw_text`) remain the
 /// evidence boundary for the later resume operation.
@@ -49,11 +83,15 @@ pub fn inspect(
         .unwrap_or(0)
         .clamp(0, audio_duration_ms);
 
+    let remaining_ms = i64::try_from(pcm_after_boundary(&pcm, last_stable_end_ms).len())
+        .unwrap_or(i64::MAX)
+        .saturating_mul(1_000)
+        / i64::from(audio::decode::WHISPER_SAMPLE_RATE);
     Ok(RecoveryInspection {
         interview_id,
         audio_duration_ms,
         last_stable_end_ms,
-        remaining_ms: audio_duration_ms.saturating_sub(last_stable_end_ms),
+        remaining_ms,
         segment_count: segments.len(),
     })
 }
@@ -157,5 +195,48 @@ mod tests {
 
         assert!(inspect(&conn, interview.id, &audio_dir).is_err());
         std::fs::remove_dir_all(audio_dir).ok();
+    }
+
+    #[test]
+    fn slices_pcm_at_the_stable_boundary_without_losing_the_suffix() {
+        let pcm = vec![0.0; 16_000];
+        assert_eq!(pcm_after_boundary(&pcm, 250).len(), 12_000);
+        assert!(pcm_after_boundary(&pcm, 2_000).is_empty());
+    }
+
+    #[test]
+    fn rebases_timestamps_and_filters_a_duplicate_boundary_segment() {
+        let existing = vec![db::models::Segment {
+            id: 1,
+            interview_id: 1,
+            speaker_id: None,
+            start_ms: 0,
+            end_ms: 1_000,
+            raw_text: "Bonjour".into(),
+            current_text: "Bonjour".into(),
+            confidence: None,
+            status: "raw".into(),
+        }];
+        let raw = vec![
+            crate::transcription::RawSegment {
+                start_ms: -100,
+                end_ms: 100,
+                text: " Bonjour ".into(),
+                confidence: None,
+            },
+            crate::transcription::RawSegment {
+                start_ms: 100,
+                end_ms: 500,
+                text: "Suite".into(),
+                confidence: Some(0.8),
+            },
+        ];
+
+        let recovered = rebase_and_filter(raw, 1_000, &existing);
+
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(recovered[0].start_ms, 1_100);
+        assert_eq!(recovered[0].end_ms, 1_500);
+        assert_eq!(recovered[0].text, "Suite");
     }
 }

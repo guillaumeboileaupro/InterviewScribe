@@ -26,6 +26,69 @@ pub fn manifest() -> Result<ModelManifest, AppError> {
         .map_err(|err| AppError::Model(format!("description du modele invalide: {err}")))
 }
 
+fn small_manifest() -> Result<ModelManifest, AppError> {
+    serde_json::from_str(include_str!(
+        "../../resources/models/whisper-small-manifest.json"
+    ))
+    .map_err(|err| AppError::Model(format!("description du modele invalide: {err}")))
+}
+
+fn base_manifest() -> Result<ModelManifest, AppError> {
+    serde_json::from_str(include_str!(
+        "../../resources/models/whisper-base-manifest.json"
+    ))
+    .map_err(|err| AppError::Model(format!("description du modele invalide: {err}")))
+}
+
+/// One entry per Whisper transcription model the user can pick between (see
+/// docs/PRODUCT.md): id is stable across releases and is what the frontend
+/// sends back to select a model - never the display name, which can change.
+const WHISPER_MODEL_IDS: [&str; 3] = ["large-v3-turbo", "small", "base"];
+
+fn whisper_manifest_by_id(id: &str) -> Result<ModelManifest, AppError> {
+    match id {
+        "large-v3-turbo" => manifest(),
+        "small" => small_manifest(),
+        "base" => base_manifest(),
+        other => Err(AppError::Model(format!("modele inconnu: {other}"))),
+    }
+}
+
+/// Resolves the model to use for a transcription: the user's explicit choice
+/// if any and known, otherwise the default (`large-v3-turbo`, unchanged
+/// behavior for anyone who never sees or uses the picker).
+pub fn selected_whisper_manifest(model_id: Option<&str>) -> Result<ModelManifest, AppError> {
+    match model_id {
+        Some(id) => whisper_manifest_by_id(id),
+        None => manifest(),
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ModelOption {
+    pub id: String,
+    pub name: String,
+    pub size_mb: u64,
+}
+
+/// All Whisper models bundled with this build, for the model picker in
+/// Reglages/Preparation. Bundled at build time like the single model always
+/// was (see docs/README.md "Telechargement") - never downloaded by the
+/// installed app.
+pub fn list_whisper_models() -> Result<Vec<ModelOption>, AppError> {
+    WHISPER_MODEL_IDS
+        .iter()
+        .map(|&id| {
+            let manifest = whisper_manifest_by_id(id)?;
+            Ok(ModelOption {
+                id: id.to_string(),
+                name: manifest.name,
+                size_mb: manifest.size_bytes.div_ceil(1_000_000),
+            })
+        })
+        .collect()
+}
+
 /// The speaker-embedding model used by `diarization` (see docs/ARCHITECTURE.md
 /// "Diarisation"). Same bundling contract as the Whisper manifest above: built
 /// into the binary, verified by checksum, never fetched at runtime.
@@ -201,6 +264,36 @@ mod tests {
         let model = manifest().unwrap();
         assert_eq!(model.file, "ggml-large-v3-turbo-q5_0.bin");
         assert_eq!(model.sha256.len(), 64);
+    }
+
+    #[test]
+    fn lists_all_three_bundled_whisper_models_with_valid_manifests() {
+        let models = list_whisper_models().unwrap();
+        let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
+        assert_eq!(ids, ["large-v3-turbo", "small", "base"]);
+        for model in &models {
+            assert!(model.size_mb > 0);
+            assert!(!model.name.is_empty());
+        }
+    }
+
+    #[test]
+    fn selected_whisper_manifest_falls_back_to_default_when_unset() {
+        let default = selected_whisper_manifest(None).unwrap();
+        assert_eq!(default.file, "ggml-large-v3-turbo-q5_0.bin");
+    }
+
+    #[test]
+    fn selected_whisper_manifest_resolves_a_smaller_model_by_id() {
+        let small = selected_whisper_manifest(Some("small")).unwrap();
+        assert_eq!(small.file, "ggml-small-q5_1.bin");
+        let base = selected_whisper_manifest(Some("base")).unwrap();
+        assert_eq!(base.file, "ggml-base-q5_1.bin");
+    }
+
+    #[test]
+    fn selected_whisper_manifest_rejects_an_unknown_id() {
+        assert!(selected_whisper_manifest(Some("does-not-exist")).is_err());
     }
 
     #[test]

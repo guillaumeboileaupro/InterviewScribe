@@ -154,14 +154,20 @@ async fn ensure_whisper_model(
 }
 
 #[tauri::command]
+fn list_available_models() -> Result<Vec<transcription::model::ModelOption>, AppError> {
+    transcription::model::list_whisper_models()
+}
+
+#[tauri::command]
 async fn transcribe_interview(
     app: tauri::AppHandle,
     interview_id: i64,
     expected_speaker_count: Option<usize>,
+    model_id: Option<String>,
 ) -> Result<db::models::InterviewDetail, AppError> {
     tauri::async_runtime::spawn_blocking(move || {
         let db = app.state::<DbState>();
-        transcribe_local(&app, &db, interview_id, expected_speaker_count)
+        transcribe_local(&app, &db, interview_id, expected_speaker_count, model_id)
     })
     .await
     .map_err(|err| AppError::Transcription(format!("traitement interrompu: {err}")))?
@@ -172,6 +178,7 @@ fn transcribe_local(
     db: &DbState,
     interview_id: i64,
     expected_speaker_count: Option<usize>,
+    model_id: Option<String>,
 ) -> Result<db::models::InterviewDetail, AppError> {
     let mark_error = |err: AppError| -> AppError {
         if let Ok(conn) = db.0.lock() {
@@ -183,7 +190,10 @@ fn transcribe_local(
 
     let transcription::model::ModelStatus::Ready {
         path: model_path, ..
-    } = transcription::model::ensure_model(app)?;
+    } = transcription::model::ensure_manifest(
+        app,
+        transcription::model::selected_whisper_manifest(model_id.as_deref())?,
+    )?;
 
     let interview = {
         let conn = lock_db(db)?;
@@ -304,9 +314,10 @@ async fn start_recording(
     title: String,
     device_name: Option<String>,
     expected_speaker_count: Option<usize>,
+    model_id: Option<String>,
 ) -> Result<db::models::Interview, AppError> {
     tauri::async_runtime::spawn_blocking(move || {
-        start_recording_local(&app, title, device_name, expected_speaker_count)
+        start_recording_local(&app, title, device_name, expected_speaker_count, model_id)
     })
     .await
     .map_err(|err| AppError::Audio(format!("demarrage interrompu: {err}")))?
@@ -317,6 +328,7 @@ fn start_recording_local(
     title: String,
     device_name: Option<String>,
     expected_speaker_count: Option<usize>,
+    model_id: Option<String>,
 ) -> Result<db::models::Interview, AppError> {
     diagnostics::log(
         "INFO",
@@ -346,7 +358,10 @@ fn start_recording_local(
     );
     let transcription::model::ModelStatus::Ready {
         path: model_path, ..
-    } = transcription::model::ensure_model(app)?;
+    } = transcription::model::ensure_manifest(
+        app,
+        transcription::model::selected_whisper_manifest(model_id.as_deref())?,
+    )?;
     let transcription::model::ModelStatus::Ready {
         path: diarization_model_path,
         ..
@@ -871,6 +886,7 @@ pub fn run() {
             get_interview,
             delete_interview,
             ensure_whisper_model,
+            list_available_models,
             transcribe_interview,
             list_input_devices,
             start_recording,
