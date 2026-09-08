@@ -148,9 +148,9 @@ E2E et leurs dependances restent hors de ce lot.
 Critere de sortie : chaque mesure est reproductible depuis un manifeste epingle
 et ne depend d'aucune donnee sensible.
 
-## 4. Audio et erreurs d'integration
+## 4. Audio et erreurs d'integration — EN COURS (Codex)
 
-- [ ] 4.1 Ajouter de petites fixtures WAV, MP3, M4A, FLAC, OGG et AAC autorisees.
+- [x] 4.1 Ajouter de petites fixtures WAV, MP3, M4A, FLAC, OGG et AAC autorisees.
 - [ ] 4.2 Tester mono, stereo, frequences d'echantillonnage et durees extremes.
 - [ ] 4.3 Tester fichiers tronques, vides, extension trompeuse et permission refusee.
 - [ ] 4.4 Simuler disque plein/ecriture et verifier la propagation sans perte.
@@ -221,3 +221,4 @@ et ne depend d'aucune donnee sensible.
 | 2026-09-08 | 3.8 (partiel) | Qualification Large v3 Turbo reelle : WER 0,0000, CER 0,0000, 149,15 s ; rapport sans contenu brut. |
 | 2026-09-08 | 3.8 (AMI) | Diagnostic : DER tours 0,5148 = 0 ms manque + 2 790 ms fausse alarme + 6 070 ms confusion ; limite segment Whisper mono-locuteur identifiee, seuil maintenu. |
 | 2026-09-08 | 3.8 | Campagne close sur Greedy : propre, bruit, musique et chevauchement executes ; derive propre 1 280 ms sur 54/59 mots, ecarts qualite conserves comme bloquants. |
+| 2026-09-08 | 4.1 | Six fixtures synthetiques 440 Hz generees localement et testees par le decodeur reel ; aucune voix ni donnee privee. |

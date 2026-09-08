@@ -13,6 +13,11 @@ src-tauri/gen/
 *.gguf
 *.bin
 *.onnx
+!tests/fixtures/audio/tone.wav
+!tests/fixtures/audio/tone.mp3
+!tests/fixtures/audio/tone.m4a
+!tests/fixtures/audio/tone.flac
+!tests/fixtures/audio/tone.ogg
 *.db
 *.sqlite
 *.sqlite3

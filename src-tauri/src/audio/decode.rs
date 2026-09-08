@@ -210,4 +210,21 @@ mod tests {
 
         std::fs::remove_file(&path).ok();
     }
+
+    #[test]
+    fn decodes_every_supported_fixture_format_to_mono_16khz() {
+        let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/fixtures/audio");
+        for extension in ["wav", "mp3", "m4a", "flac", "ogg", "aac"] {
+            let path = fixture_dir.join(format!("tone.{extension}"));
+            let pcm = decode_to_mono_pcm16k(&path)
+                .unwrap_or_else(|error| panic!("failed to decode {}: {error}", path.display()));
+            assert!(
+                (3_500..=5_500).contains(&pcm.len()),
+                "unexpected decoded length for {extension}: {}",
+                pcm.len()
+            );
+            let peak = pcm.iter().copied().map(f32::abs).fold(0.0, f32::max);
+            assert!(peak > 0.01, "decoded {extension} fixture is silent");
+        }
+    }
 }
