@@ -282,7 +282,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         let labels = best_ami_cluster_labels(&segments, &assignments, &reference.words);
-        let reference_regions = reference
+        let word_regions = reference
             .words
             .iter()
             .map(|word| crate::evaluation::SpeakerRegion {
@@ -292,6 +292,7 @@ mod tests {
                 uncertain: false,
             })
             .collect::<Vec<_>>();
+        let reference_regions = ami_speaker_turns(&reference.words, 500);
         let hypothesis_regions = segments
             .iter()
             .zip(&assignments)
@@ -302,6 +303,8 @@ mod tests {
                 uncertain: assignment.uncertain,
             })
             .collect::<Vec<_>>();
+        let word_diarization =
+            crate::evaluation::diarization_metrics(&word_regions, &hypothesis_regions);
         let diarization =
             crate::evaluation::diarization_metrics(&reference_regions, &hypothesis_regions);
         let reference_text = reference
@@ -330,10 +333,11 @@ mod tests {
             boundaries.duplicate_count as f64 / timed.len().saturating_sub(1).max(1) as f64;
 
         println!(
-            "ami metrics: segments={}, clusters={}, wer={wer:.4}, cer={cer:.4}, der={:.4}, missed_ms={}, false_alarm_ms={}, confusion_ms={}, uncertain={:.4}, duplicates={duplicate_rate:.4}",
+            "ami metrics: segments={}, clusters={}, wer={wer:.4}, cer={cer:.4}, der={:.4}, word_region_der={:.4}, missed_ms={}, false_alarm_ms={}, confusion_ms={}, uncertain={:.4}, duplicates={duplicate_rate:.4}",
             segments.len(),
             clusterer.speaker_count(),
             diarization.der,
+            word_diarization.der,
             diarization.missed_speech_ms,
             diarization.false_alarm_ms,
             diarization.speaker_confusion_ms,
@@ -367,6 +371,38 @@ mod tests {
             violations.is_empty(),
             "AMI quality thresholds exceeded: {violations:?}"
         );
+    }
+
+    /// Converts word-level NXT annotations into speech turns. Whisper emits
+    /// continuous segment spans, so treating every natural inter-word pause as
+    /// non-speech would incorrectly count those pauses as false alarms. A 500 ms
+    /// maximum gap is fixed here and reported as part of the qualification
+    /// protocol; speaker changes always start a separate turn.
+    #[cfg(not(target_os = "android"))]
+    fn ami_speaker_turns(
+        words: &[AmiWord],
+        maximum_gap_ms: i64,
+    ) -> Vec<crate::evaluation::SpeakerRegion> {
+        let mut turns = Vec::<crate::evaluation::SpeakerRegion>::new();
+        for speaker in ["A", "B", "C", "D"] {
+            for word in words.iter().filter(|word| word.speaker == speaker) {
+                if let Some(turn) = turns.last_mut().filter(|turn| {
+                    turn.speaker.as_deref() == Some(speaker)
+                        && word.start_ms - turn.end_ms <= maximum_gap_ms
+                }) {
+                    turn.end_ms = turn.end_ms.max(word.end_ms);
+                } else {
+                    turns.push(crate::evaluation::SpeakerRegion {
+                        start_ms: word.start_ms,
+                        end_ms: word.end_ms,
+                        speaker: Some(speaker.to_string()),
+                        uncertain: false,
+                    });
+                }
+            }
+        }
+        turns.sort_by_key(|turn| turn.start_ms);
+        turns
     }
 
     #[cfg(not(target_os = "android"))]
@@ -428,6 +464,44 @@ mod tests {
                 current.pop();
             }
         }
+    }
+
+    #[cfg(not(target_os = "android"))]
+    #[test]
+    fn ami_word_annotations_are_grouped_into_speaker_turns() {
+        let words = vec![
+            AmiWord {
+                speaker: "A".into(),
+                start_ms: 100,
+                end_ms: 300,
+                text: String::new(),
+            },
+            AmiWord {
+                speaker: "A".into(),
+                start_ms: 600,
+                end_ms: 800,
+                text: String::new(),
+            },
+            AmiWord {
+                speaker: "A".into(),
+                start_ms: 1_400,
+                end_ms: 1_600,
+                text: String::new(),
+            },
+            AmiWord {
+                speaker: "B".into(),
+                start_ms: 400,
+                end_ms: 500,
+                text: String::new(),
+            },
+        ];
+
+        let turns = ami_speaker_turns(&words, 500);
+
+        assert_eq!(turns.len(), 3);
+        assert_eq!((turns[0].start_ms, turns[0].end_ms), (100, 800));
+        assert_eq!(turns[1].speaker.as_deref(), Some("B"));
+        assert_eq!((turns[2].start_ms, turns[2].end_ms), (1_400, 1_600));
     }
 
     /// Deterministic PRNG-based white noise, scaled to hit a target SNR against the

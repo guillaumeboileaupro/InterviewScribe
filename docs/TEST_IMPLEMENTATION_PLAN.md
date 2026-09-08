@@ -218,4 +218,4 @@ et ne depend d'aucune donnee sensible.
 | 2026-09-08 | 3.2 | Sources mono francophone et AMI quatre voix selectionnees, attribuees et epinglees. |
 | 2026-09-08 | 3.7 | Seuils initiaux WER/CER/DER/doublons/derive versionnes et depassements bloquants testes. |
 | 2026-09-08 | 3.8 (partiel) | Qualification Large v3 Turbo reelle : WER 0,0000, CER 0,0000, 149,15 s ; rapport sans contenu brut. |
-| 2026-09-08 | 3.8 (AMI) | Qualification 20 s : 4 clusters, WER 0,0678, CER 0,0500, DER 0,5200 ; echec explicite a 0,0200 du seuil, diagnostic encore ouvert. |
+| 2026-09-08 | 3.8 (AMI) | Diagnostic : DER tours 0,5148 = 0 ms manque + 2 790 ms fausse alarme + 6 070 ms confusion ; limite segment Whisper mono-locuteur identifiee, seuil maintenu. |

@@ -39,17 +39,26 @@ cargo test --release --manifest-path src-tauri/Cargo.toml \
 | Segments / clusters | 6 / 4 |
 | WER | 0,0678 |
 | CER | 0,0500 |
-| DER | 0,5200 |
+| DER sur tours de parole | 0,5148 |
+| DER naif sur regions de mots | 0,5200 |
+| Parole manquee | 0 ms |
+| Fausse alarme | 2 790 ms |
+| Confusion de locuteur | 6 070 ms |
 | Couverture `uncertain` | 0,0000 |
 | Doublons | 0,0000 |
 | Seuil DER | <= 0,50 |
 | Duree du test | 190,73 s, hors compilation initiale |
-| Resultat | Echec explicite : DER depasse le seuil de 0,0200 |
+| Resultat | Echec explicite : DER depasse le seuil de 0,0148 |
 
 Un premier extrait de 10 s a ete rejete comme non representatif : seulement
 deux clusters sur quatre et DER 0,9618. Le passage a 20 s a bien produit quatre
-clusters et fortement ameliore les mesures, mais le seuil DER reste volontairement
-inchange tant que la cause des 2 points de depassement n'est pas etablie.
+clusters et fortement ameliore les mesures. La reference mot a mot a ensuite ete
+convertie en tours de parole en regroupant, pour un meme locuteur, les pauses de
+500 ms ou moins. Les deux DER sont publies pour rendre ce choix visible. Les
+6 070 ms de confusion montrent que le depassement restant vient principalement
+des segments Whisper qui couvrent plusieurs tours de parole, alors que le pipeline
+attribue actuellement une seule empreinte et un seul locuteur a chaque segment.
+Le seuil reste volontairement inchange.
 
 Commande reproductible apres `pnpm corpus:prepare` :
 
