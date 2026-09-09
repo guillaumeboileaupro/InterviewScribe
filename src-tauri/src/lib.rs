@@ -577,6 +577,43 @@ async fn stop_recording(app: tauri::AppHandle) -> Result<db::models::InterviewDe
 /// stays stable across the whole session, exactly like `transcribe_local`
 /// does for a whole file at once - the only difference is doing it one
 /// chunk at a time, offsetting timestamps by however much came before.
+fn consume_recording_events<I, OnLevel, ProcessChunk, OnUpdated, OnError>(
+    events: I,
+    mut on_level: OnLevel,
+    mut process_chunk: ProcessChunk,
+    mut on_updated: OnUpdated,
+    mut on_error: OnError,
+) where
+    I: IntoIterator<Item = capture::session::SessionEvent>,
+    OnLevel: FnMut(f32),
+    ProcessChunk: FnMut(i64, &[f32]) -> Result<(), AppError>,
+    OnUpdated: FnMut(),
+    OnError: FnMut(String),
+{
+    let mut elapsed_ms = 0i64;
+    for event in events {
+        match event {
+            capture::session::SessionEvent::LevelUpdate { rms } => on_level(rms),
+            capture::session::SessionEvent::Error(message) => on_error(message),
+            capture::session::SessionEvent::ChunkReady { pcm } => {
+                if pcm.is_empty() {
+                    continue;
+                }
+                let chunk_duration_ms =
+                    (pcm.len() as i64 * 1000) / audio::decode::WHISPER_SAMPLE_RATE as i64;
+                match process_chunk(elapsed_ms, &pcm) {
+                    Ok(()) => on_updated(),
+                    Err(error) => on_error(error.to_string()),
+                }
+                // An erroneous chunk still occupied time in the saved audio.
+                // Advancing preserves timestamps for every later successful
+                // chunk instead of collapsing them onto the failed interval.
+                elapsed_ms += chunk_duration_ms;
+            }
+        }
+    }
+}
+
 fn run_recording_processing(
     app: tauri::AppHandle,
     interview_id: i64,
@@ -594,42 +631,28 @@ fn run_recording_processing(
         Ok(assigner) => assigner,
         Err(err) => return report_recording_error(&app, interview_id, err),
     };
-    let mut elapsed_ms: i64 = 0;
-
-    for event in events {
-        match event {
-            capture::session::SessionEvent::LevelUpdate { rms } => {
-                let _ = app.emit("recording-level", rms);
-            }
-            capture::session::SessionEvent::Error(message) => {
-                let _ = app.emit("recording-error", message);
-            }
-            capture::session::SessionEvent::ChunkReady { pcm } => {
-                if pcm.is_empty() {
-                    continue;
-                }
-                let chunk_duration_ms =
-                    (pcm.len() as i64 * 1000) / audio::decode::WHISPER_SAMPLE_RATE as i64;
-                let result = process_recording_chunk(
-                    &app,
-                    interview_id,
-                    &transcriber,
-                    &mut assigner,
-                    elapsed_ms,
-                    &pcm,
-                );
-                match result {
-                    Ok(()) => {
-                        let _ = app.emit("segments-updated", interview_id);
-                    }
-                    Err(err) => {
-                        let _ = app.emit("recording-error", err.to_string());
-                    }
-                }
-                elapsed_ms += chunk_duration_ms;
-            }
-        }
-    }
+    consume_recording_events(
+        events,
+        |rms| {
+            let _ = app.emit("recording-level", rms);
+        },
+        |elapsed_ms, pcm| {
+            process_recording_chunk(
+                &app,
+                interview_id,
+                &transcriber,
+                &mut assigner,
+                elapsed_ms,
+                pcm,
+            )
+        },
+        || {
+            let _ = app.emit("segments-updated", interview_id);
+        },
+        |message| {
+            let _ = app.emit("recording-error", message);
+        },
+    );
 }
 
 fn process_recording_chunk(
@@ -1013,5 +1036,42 @@ mod tests {
     #[test]
     fn application_status_reports_foundation() {
         assert_eq!(application_status(), "foundation");
+    }
+
+    #[test]
+    fn failed_chunk_keeps_prior_audio_and_processing_continues_at_the_right_offset() {
+        let audio_path = std::env::temp_dir().join(format!(
+            "interviewscribe-chunk-failure-{}.wav",
+            std::process::id()
+        ));
+        let audio_evidence = b"saved audio evidence";
+        std::fs::write(&audio_path, audio_evidence).unwrap();
+        let chunks = [1.0f32, 2.0, 3.0].map(|marker| capture::session::SessionEvent::ChunkReady {
+            pcm: vec![marker; audio::decode::WHISPER_SAMPLE_RATE as usize],
+        });
+        let mut persisted_offsets = Vec::new();
+        let mut errors = Vec::new();
+        let mut updates = 0;
+
+        consume_recording_events(
+            chunks,
+            |_| {},
+            |offset, pcm| {
+                if pcm[0] == 2.0 {
+                    Err(AppError::Transcription("segment test invalide".into()))
+                } else {
+                    persisted_offsets.push(offset);
+                    Ok(())
+                }
+            },
+            || updates += 1,
+            |message| errors.push(message),
+        );
+
+        assert_eq!(persisted_offsets, vec![0, 2_000]);
+        assert_eq!(updates, 2);
+        assert_eq!(errors.len(), 1);
+        assert_eq!(std::fs::read(&audio_path).unwrap(), audio_evidence);
+        std::fs::remove_file(audio_path).ok();
     }
 }

@@ -154,7 +154,7 @@ et ne depend d'aucune donnee sensible.
 - [x] 4.2 Tester mono, stereo, frequences d'echantillonnage et durees extremes.
 - [x] 4.3 Tester fichiers tronques, vides, extension trompeuse et permission refusee.
 - [x] 4.4 Simuler disque plein/ecriture et verifier la propagation sans perte.
-- [ ] 4.5 Tester erreur d'un segment sans perte du reste de l'entretien.
+- [x] 4.5 Tester erreur d'un segment sans perte du reste de l'entretien.
 
 ## 5. Accessibilite et rendu reel
 
@@ -225,3 +225,4 @@ et ne depend d'aucune donnee sensible.
 | 2026-09-08 | 4.2 | Matrice WAV 8/16/44,1/48 kHz, mono/stereo et 10 ms a 60 s normalisee en mono 16 kHz. |
 | 2026-09-09 | 4.3 | Fichiers vide/tronque refuses, contenu WAV sous extension MP3 detecte et permission Unix refusee propagee. |
 | 2026-09-09 | 4.4 | Ecriture WAV incrementale rendue faillible ; ENOSPC simule, erreur emise une fois et prefixe recuperable conserve. |
+| 2026-09-09 | 4.5 | Echec du bloc median injecte : blocs precedent/suivant conserves, offset suivant maintenu et audio source intact. |
