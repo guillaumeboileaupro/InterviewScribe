@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "wdio-e2e",
+  "description": "Permissions supplementaires pour le harnais E2E WebdriverIO (tauri-plugin-wdio + tauri-plugin-wdio-webdriver). Jamais chargees dans un build reel: cette capacite n'est ajoutee a app.security.capabilities que via --config src-tauri/tauri.wdio-e2e.conf.json, utilise uniquement par scripts/e2e-linux.sh, scripts/e2e-windows.ps1 et les jobs e2e-linux/e2e-windows de .github/workflows/ci.yml - jamais release.yml.",
+  "windows": ["main"],
+  "permissions": [
+    "core:window:default",
+    "wdio:default",
+    "wdio-webdriver:default"
+  ]
+}

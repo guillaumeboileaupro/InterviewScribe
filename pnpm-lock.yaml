@@ -60,6 +60,9 @@ importers:
       '@wdio/spec-reporter':
         specifier: ^9.31.2
         version: 9.31.2
+      '@wdio/tauri-plugin':
+        specifier: ^1.4.0
+        version: 1.4.0(tsx@4.23.13)
       '@wdio/tauri-service':
         specifier: ^1.4.0
         version: 1.4.0(expect-webdriverio@6.0.10)(tsx@4.23.13)(webdriverio@9.31.7)
@@ -867,6 +870,9 @@ packages:
   '@tauri-apps/plugin-dialog@2.7.3':
     resolution: {integrity: sha512-CRgE+7TP4tvq9MjBU6f04NLTFIqVMLKHk3hAqlhil00ngK9ACTrXPH3oHpKMProxILodd3YjBoKbMwSI4IEcfA==}
 
+  '@tauri-apps/plugin-log@2.9.1':
+    resolution: {integrity: sha512-8dYNEQOgZcIEqeFtHAsOIGLoptm+j94270Jf2MrGS/zbsYNd4C8DKyOdeYggAyE3ugwr12mTefIfC8lVVEhdlg==}
+
   '@testing-library/dom@10.4.1':
     resolution: {integrity: sha512-o4PXJQidqJl82ckFaXUeoAW+XysPLauYI43Abki5hABd853iMhitooc6znOnczgbTYmEP6U6/y1ZyKAIsvMKGg==}
     engines: {node: '>=18'}
@@ -1162,6 +1168,10 @@ packages:
   '@wdio/spec-reporter@9.31.2':
     resolution: {integrity: sha512-lNLLPUk4y1Yp5pWwBFF+tjZIy7bOv0TPTk4HDWV4LnnHnkc24abI0nN+kb2y5/JV8ZgwLCCVKUFRdRUxfKsAaQ==}
     engines: {node: '>=18.20.0'}
+
+  '@wdio/tauri-plugin@1.4.0':
+    resolution: {integrity: sha512-fXebQlQiomyNWYRNBN6OBsaJTXDQSbkvRFeGteEedI/VPSXNVgv23WgjwHYOu3+ZOhiF2UwaiigjP6821tLSOw==}
+    engines: {node: ^18.12.0 || ^20.9.0 || >=22.11.0}
 
   '@wdio/tauri-service@1.4.0':
     resolution: {integrity: sha512-EUTS8tfMOXK1yPNEaRd6yiSdPoX19zeV+gtp2m7UuPTWFZGayPuMUoFyttP6Lx3OFvJC3lnbxjr1vcCNAOA7tg==}
@@ -3679,6 +3689,10 @@ snapshots:
     dependencies:
       '@tauri-apps/api': 2.11.1
 
+  '@tauri-apps/plugin-log@2.9.1':
+    dependencies:
+      '@tauri-apps/api': 2.11.1
+
   '@testing-library/dom@10.4.1':
     dependencies:
       '@babel/code-frame': 7.29.7
@@ -4139,6 +4153,16 @@ snapshots:
       chalk: 5.6.2
       easy-table: 1.2.0
       pretty-ms: 9.3.1
+
+  '@wdio/tauri-plugin@1.4.0(tsx@4.23.13)':
+    dependencies:
+      '@tauri-apps/api': 2.11.1
+      '@tauri-apps/plugin-log': 2.9.1
+      '@wdio/native-spy': 1.3.0
+      '@wdio/native-utils': 2.7.0(tsx@4.23.13)
+    transitivePeerDependencies:
+      - supports-color
+      - tsx
 
   '@wdio/tauri-service@1.4.0(expect-webdriverio@6.0.10)(tsx@4.23.13)(webdriverio@9.31.7)':
     dependencies:

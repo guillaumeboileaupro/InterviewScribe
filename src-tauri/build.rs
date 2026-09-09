@@ -1,5 +1,24 @@
 fn main() {
-    tauri_build::build();
+    // `wdio-e2e.json` declares permissions (`wdio:default`, `wdio-webdriver:default`)
+    // that only resolve when the matching plugins are actually compiled in
+    // (the `wdio-e2e` feature - see Cargo.toml). tauri-build's default glob
+    // (`./capabilities/**/*`) validates every file under `capabilities/`
+    // unconditionally, regardless of `app.security.capabilities` in
+    // tauri.conf.json - so with the default glob, that file's mere presence
+    // on disk breaks `cargo test`/`cargo clippy`/`cargo build` even without
+    // the feature (verified: "Permission wdio:default not found" from a
+    // plain `cargo test` before this fix). Restrict the glob to exclude it
+    // unless the feature is active, so a normal build never sees it.
+    println!("cargo:rerun-if-changed=capabilities");
+    let capabilities_pattern = if cfg!(feature = "wdio-e2e") {
+        "./capabilities/**/*"
+    } else {
+        "./capabilities/default.json"
+    };
+    tauri_build::try_build(
+        tauri_build::Attributes::new().capabilities_path_pattern(capabilities_pattern),
+    )
+    .expect("failed to run tauri-build");
 
     // `src-tauri/gen/android/` is gitignored and regenerated from scratch by
     // `pnpm tauri android init` (including in CI, every run) - editing its

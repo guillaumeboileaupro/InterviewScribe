@@ -36,9 +36,16 @@ hound = "3.5.1"
 # feature (enabled exclusively by e2e-linux/e2e-windows CI jobs, never
 # release.yml) pulls it in.
 tauri-plugin-wdio-webdriver = { version = "1", optional = true }
+# Companion plugin required by @wdio/tauri-service's command hooks (window
+# focus tracking, execute/mock API) - distinct from tauri-plugin-wdio-webdriver
+# above, which only provides the WebDriver HTTP transport. Without this one,
+# every element/click command from the test runner stalls 5s waiting on a
+# `window.__wdio_original_core__` reference that only this plugin's frontend
+# half ever sets up (see apps/client/src/main.tsx). Same test-only gating.
+tauri-plugin-wdio = { version = "1", optional = true }
 
 [features]
-wdio-e2e = ["dep:tauri-plugin-wdio-webdriver"]
+wdio-e2e = ["dep:tauri-plugin-wdio-webdriver", "dep:tauri-plugin-wdio"]
 
 [target.'cfg(target_os = "android")'.dependencies]
 tauri-plugin-fs = "2"

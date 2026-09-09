@@ -24,6 +24,12 @@ const applicationPath =
 export const config = {
   specs: ["./specs/**/*.e2e.mjs"],
   maxInstances: 1,
+  // wdio's own config parser requires this key to exist structurally, even
+  // though @wdio/tauri-service is what actually populates the real
+  // capability - confirmed via a real CI failure ("No `capabilities`
+  // property found") on both platforms before either even got as far as
+  // starting the app.
+  capabilities: [{}],
   services: [
     [
       "tauri",

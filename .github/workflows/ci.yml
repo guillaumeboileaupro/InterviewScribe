@@ -62,7 +62,9 @@ jobs:
       - name: Prepare bundled Whisper models (checksum verified)
         run: pnpm models:prepare
       - name: Build the desktop .deb (E2E test build - embedded WebDriver plugin included)
-        run: pnpm tauri build --bundles deb --features wdio-e2e
+        env:
+          VITE_WDIO_E2E: "true"
+        run: pnpm tauri build --bundles deb --features wdio-e2e --config src-tauri/tauri.wdio-e2e.conf.json
       - name: Install the built package
         run: sudo dpkg -i src-tauri/target/release/bundle/deb/*.deb
       - name: Run E2E suite
@@ -86,6 +88,8 @@ jobs:
       - name: Prepare bundled Whisper models (checksum verified)
         run: pnpm models:prepare
       - name: Build the desktop installer (E2E test build - embedded WebDriver plugin included)
-        run: pnpm tauri build --bundles nsis --features wdio-e2e
+        env:
+          VITE_WDIO_E2E: "true"
+        run: pnpm tauri build --bundles nsis --features wdio-e2e --config src-tauri/tauri.wdio-e2e.conf.json
       - name: Run E2E suite
         run: pnpm test:e2e:windows

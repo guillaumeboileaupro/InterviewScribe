@@ -981,7 +981,9 @@ pub fn run() {
     // E2E test builds only (`--features wdio-e2e`) - never present in a real
     // build, see the dependency comment in Cargo.toml.
     #[cfg(feature = "wdio-e2e")]
-    let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
+    let builder = builder
+        .plugin(tauri_plugin_wdio_webdriver::init())
+        .plugin(tauri_plugin_wdio::init());
     builder
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {

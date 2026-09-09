@@ -69,9 +69,33 @@ fichiers: cette section ne touche pas `recovery.rs` ni son chemin de
 recuperation. Coordination asynchrone via ce document, aucun canal direct
 entre les deux agents.
 
-- [x] 2.1 Choisir et documenter le pilote compatible Tauri 2/WebDriver : `tauri-driver`
-  (crate officiel) au-dessus de `WebKitWebDriver` sous Linux, pilote par
-  WebdriverIO/Mocha. Config `e2e/wdio.conf.mjs`, suite `e2e/specs/*.e2e.mjs`.
+- [x] 2.1 Choisir et documenter le pilote compatible Tauri 2/WebDriver. **Architecture
+  revue depuis** : `tauri-driver` externe + `WebKitWebDriver` abandonne au profit
+  du pilote embarque de `@wdio/tauri-service` (`tauri-plugin-wdio-webdriver`,
+  serveur WebDriver W3C dans le process de l'app - plus de processus externe
+  a installer/versionner), recommandation actuelle de Tauri. Config
+  `e2e/wdio.conf.mjs`, suite `e2e/specs/*.e2e.mjs`. **2026-09-09** : ce pilote
+  embarque a lui-meme besoin d'un SECOND plugin compagnon,
+  `tauri-plugin-wdio` (Rust + JS frontend), pour que les hooks de commande de
+  `@wdio/tauri-service` fonctionnent - sans lui, `window.__wdio_original_core__`
+  n'existe jamais et CHAQUE commande WebDriver (`$`, `$$`, `elementClick`,
+  `getTitle`, `findElement(s)`) attend 5s pour rien avant d'abandonner
+  silencieusement (warning seulement, jamais fatal). Trouve en lisant la doc
+  du paquet installe (`node_modules/.../@wdio/tauri-service/docs/plugin-setup.md`,
+  fichier local, jamais une source distante) apres avoir remarque que le
+  warning `Tauri core.invoke not available after 5s timeout` apparaissait
+  toutes les ~5s en continu, y compris pendant des tests qui passaient.
+  Corrige : `tauri-plugin-wdio` ajoute (Cargo.toml, `lib.rs`, meme feature
+  `wdio-e2e`), `withGlobalTauri: true` + capacite `wdio-e2e` (nouveau fichier
+  `capabilities/wdio-e2e.json`) ajoutes uniquement via
+  `--config src-tauri/tauri.wdio-e2e.conf.json` (jamais dans `tauri.conf.json`
+  de base - `app.security.capabilities` y est verrouille a `["default"]`),
+  import frontend conditionnel (`apps/client/src/main.tsx`, gate
+  `import.meta.env.VITE_WDIO_E2E === "true"`, verifie absent du `dist/` de
+  production par `grep -rl wdio dist/` apres un `pnpm build` normal - aucune
+  occurrence). **Verifie reellement** : warnings `core.invoke not available`
+  passes de 25+ par run a 0 ; suite smoke passee de 3m41s a 5.5s pour les
+  memes 3 tests.
 - [x] 2.2 Profil temporaire : `scripts/e2e-linux.sh` isole chaque execution dans
   un `XDG_DATA_HOME`/`XDG_CONFIG_HOME`/`XDG_CACHE_HOME` jetable (`mktemp -d`),
   jamais les vraies donnees utilisateur. Pas encore de fixtures synthetiques
@@ -84,35 +108,59 @@ entre les deux agents.
   liste des microphones reellement filtree (re-valide en conditions reelles
   le correctif `capture/device.rs`). 3 tests, tous verts en conditions
   reelles (`pnpm test:e2e:linux`).
-- [x] 2.4 (partiel) `e2e/specs/workflow.e2e.mjs` : import reel via automatisation
+- [x] 2.4 (partiel - voir blocage 2026-09-09 ci-dessous) `e2e/specs/workflow.e2e.mjs` : import reel via automatisation
   de la boite de dialogue native ("Open File", hors DOM du webview, pilotee
   par `xdotool` - voir `e2e/helpers/native-dialog.mjs`, technique
   fonctionnelle et verifiee) avec une fixture audio synthetique generee a
   l'execution (`e2e/fixtures/generate-audio.mjs`, jamais commitee). Le test
   verifie reellement que l'import declenche la transcription (checkpoint
-  fiable et rapide, ~5s). **Probleme reel constate, non resolu** : la
-  transcription elle-meme (meme modele "base", meme clip de 3s) ne se
-  termine pas en moins de 180s dans cet environnement, meme apres avoir
-  ecarte la surchauffe (temperature/frequence CPU normales) et un bug reel
-  de nettoyage de processus (corrige dans `scripts/e2e-linux.sh` : `kill`
-  ne tuait que `tauri-driver`, pas l'application enfant, laissant des
-  processus orphelins fausser les mesures suivantes). Aucun repere
-  diagnostics dans le chemin `transcribe_local`/`whisper_cpp` pour
-  localiser ou le temps est reellement passe. La suite d'edition/nettoyage/
-  locuteurs/export/suppression est ecrite mais placee en `it.skip` avec
-  la raison documentee en commentaire, plutot que de la faire passer sur
-  une portee reduite ou de la laisser rouge en permanence. A revoir soit
-  avec un environnement propre (une piste: la meme suite sous CI, machine
-  dediee, pourrait ne pas reproduire le probleme), soit apres avoir ajoute
-  des reperes `diagnostics::log` dans le pipeline de transcription.
+  fiable et rapide, ~5s). **Cause racine de la lenteur (180s+ non termine)
+  identifiee et corrigee** : `whisper_cpp.rs` utilisait
+  `SamplingStrategy::BeamSearch{beam_size:5, patience:-1.0}` - le
+  commentaire de doc de whisper-rs lui-meme est explicite ("at the cost of
+  exponential CPU time"), et `patience` n'est meme pas implemente cote
+  whisper.cpp. Remplace par `Greedy{best_of:5}` (le mode par defaut de
+  whisper.cpp). Verifie directement via un test `#[ignore]`
+  (`timing_check`, meme modele "base" bundle, meme clip synthetique de 3s) :
+  180s+ (incomplet) -> 9.35s (complet). C'est aussi la cause du bug
+  utilisateur reel "transcription impossible sur .deb et .exe", corrige et
+  publie en v0.1.2.
+  **2026-09-09 - nouveau blocage reel identifie, distinct de la lenteur
+  whisper (celle-ci reste corrigee)** : une fois le correctif `tauri-plugin-wdio`
+  de 2.1 applique, `workflow.e2e.mjs` echoue de facon reproductible des
+  l'etape "Choisir un fichier audio" (apres le select de mode et de modele).
+  Diagnostic direct (spec jetable, jamais commitee, supprimee apres usage) :
+  `document.querySelector('select').value` reste bloque sur `"microphone"`
+  APRES `selectByAttribute("value","file")` - la valeur DOM du `<select>` ne
+  change tout simplement jamais, donc l'etat React `source` non plus, donc
+  le bouton conditionne par `source === "file"` (`App.tsx` ~ligne 1284) ne
+  s'affiche jamais. Deuxieme technique testee (clic sur le `<select>` puis
+  `browser.keys(["ArrowDown","Enter"])`, approche standard quand le clic
+  direct sur une `<option>` echoue) : meme resultat, valeur DOM inchangee.
+  Conclusion : l'interaction native avec un `<select>` HTML via le pilote
+  WebDriver embarque de `tauri-plugin-wdio-webdriver` sous WebKitGTK ne
+  fonctionne pas actuellement (ni clic d'option, ni clavier) - limitation du
+  plugin (encore jeune), pas un bug de l'application. Aucun contournement
+  trouve pour l'instant sans modifier l'app elle-meme (ex: remplacer le
+  `<select>` natif par des boutons/radios cliquables classiques, uniquement
+  si l'UX le justifie independamment du besoin de test). La suite
+  d'edition/nettoyage/locuteurs/export/suppression reste donc en `it.skip`,
+  bloquee par CE probleme precis (et non plus par la lenteur whisper, qui
+  est resolue) - a revoir si une version future de `tauri-plugin-wdio-webdriver`
+  corrige le support des `<select>` natifs, ou si l'UI est un jour changee
+  pour un composant plus facilement pilotable.
 - [x] 2.5 Job `e2e-linux` ajoute a `.github/workflows/ci.yml` : construit le vrai
   `.deb`, l'installe, execute la suite sous `xvfb-run` (xdotool fonctionne
-  pareil sous un serveur X virtuel), upload le journal `tauri-driver` en
-  artefact seulement si le job echoue. Execute reellement pour verifier
-  (run `34254415903`) : les 3 jobs (`web`, `rust`, `e2e-linux`) passent, les
-  4 tests reels verts en ~1 min sur runner propre - la question ouverte en
-  2.4 (lenteur de transcription observee sur la machine de developpement)
-  reste non tranchee ici puisque ce test precis est toujours `it.skip`.
+  pareil sous un serveur X virtuel). Execute reellement pour verifier
+  (run `34254415903`, avant le pivot d'architecture note en 2.1) : les 3 jobs
+  (`web`, `rust`, `e2e-linux`) passent, les 4 tests reels verts en ~1 min sur
+  runner propre - la question ouverte en 2.4 (lenteur de transcription
+  observee sur la machine de developpement) reste non tranchee ici puisque ce
+  test precis est toujours `it.skip`. **Note** : la mention historique d'un
+  artefact `tauri-driver.log` uploade (ci-dessous, 2.7) ne s'applique plus
+  depuis le pivot vers `@wdio/tauri-service` en 2.1 - plus de processus
+  `tauri-driver` externe, donc plus ce journal-la; le `ci.yml` actuel
+  n'uploade aucun artefact pour ces jobs.
 - [ ] 2.6 Porter la meme suite sur `windows-latest`.
 - [x] 2.7 L'artefact de diagnostic uploade (`tauri-driver.log`) ne contient que
   des messages de cycle de vie du processus - jamais l'audio, la base
