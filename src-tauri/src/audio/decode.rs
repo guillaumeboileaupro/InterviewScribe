@@ -261,4 +261,50 @@ mod tests {
             std::fs::remove_file(&path).ok();
         }
     }
+
+    #[test]
+    fn empty_file_is_reported_as_an_audio_error() {
+        let path = temp_path("empty.wav");
+        std::fs::write(&path, []).unwrap();
+        let result = decode_to_mono_pcm16k(&path);
+        std::fs::remove_file(&path).ok();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn truncated_wav_header_is_reported_as_an_audio_error() {
+        let fixture =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/fixtures/audio/tone.wav");
+        let bytes = std::fs::read(fixture).unwrap();
+        let path = temp_path("truncated.wav");
+        std::fs::write(&path, &bytes[..40]).unwrap();
+        let result = decode_to_mono_pcm16k(&path);
+        std::fs::remove_file(&path).ok();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn content_probe_decodes_a_wav_with_a_misleading_mp3_extension() {
+        let fixture =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/fixtures/audio/tone.wav");
+        let path = temp_path("actually-wav.mp3");
+        std::fs::copy(fixture, &path).unwrap();
+        let pcm = decode_to_mono_pcm16k(&path).unwrap();
+        std::fs::remove_file(&path).ok();
+        assert!(!pcm.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn permission_denied_is_propagated_without_a_panic() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let path = temp_path("permission-denied.wav");
+        std::fs::write(&path, b"audio remains unread").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let result = decode_to_mono_pcm16k(&path);
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        std::fs::remove_file(&path).ok();
+        assert!(result.is_err());
+    }
 }
