@@ -276,7 +276,15 @@ jobs:
 
   android-emulator:
     needs: android
-    runs-on: ubuntu-24.04-arm
+    # Not ubuntu-*-arm: Google does not publish Android SDK command-line
+    # tools for a linux-aarch64 host at all (verified via the real CI
+    # failure - "Failed to find package 'emulator'", then "undefined/
+    # platform-tools/adb" once $ANDROID_HOME never got set up) - this is a
+    # hard platform gap, not a misconfigured env var. The emulator still runs
+    # an arm64-v8a *guest* image just fine on an x86_64 host, only without
+    # KVM passthrough for that guest arch (slower, but functional - accepted
+    # since this job verifies correctness, not speed).
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4

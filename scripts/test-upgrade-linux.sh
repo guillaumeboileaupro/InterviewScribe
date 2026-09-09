@@ -63,12 +63,24 @@ if [[ $launch_status -ne 0 && $launch_status -ne 124 ]]; then
   exit 1
 fi
 
-[[ $(sqlite3 "$database" 'PRAGMA user_version') == 1 ]]
-[[ $(sqlite3 "$database" "SELECT COUNT(*) FROM pragma_table_info('interview') WHERE name='notes'") == 1 ]]
-[[ $(sqlite3 "$database" "SELECT COUNT(*) FROM pragma_table_info('edit') WHERE name='reverted_at'") == 1 ]]
+assert_eq() {
+  local label=$1 expected=$2 actual=$3
+  if [[ "$actual" != "$expected" ]]; then
+    echo "Echec verification post-mise a niveau [$label]: attendu '$expected', obtenu '$actual'" >&2
+    exit 1
+  fi
+}
+
+assert_eq "user_version" "1" "$(sqlite3 "$database" 'PRAGMA user_version')"
+assert_eq "colonne interview.notes" "1" \
+  "$(sqlite3 "$database" "SELECT COUNT(*) FROM pragma_table_info('interview') WHERE name='notes'")"
+assert_eq "colonne edit.reverted_at" "1" \
+  "$(sqlite3 "$database" "SELECT COUNT(*) FROM pragma_table_info('edit') WHERE name='reverted_at'")"
 for table in interview speaker segment edit setting; do
-  [[ $(sqlite3 "$database" "SELECT COUNT(*) FROM $table") == 1 ]]
+  assert_eq "lignes conservees dans $table" "1" \
+    "$(sqlite3 "$database" "SELECT COUNT(*) FROM $table")"
 done
-[[ $(sqlite3 "$database" 'SELECT raw_text FROM segment WHERE id=1') == 'Texte synthetique immuable.' ]]
+assert_eq "raw_text du segment 1 (immuable)" "Texte synthetique immuable." \
+  "$(sqlite3 "$database" 'SELECT raw_text FROM segment WHERE id=1')"
 
 echo "Mise a niveau validee: $old_version -> $new_version; schema et donnees conserves."
