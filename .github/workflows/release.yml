@@ -274,10 +274,18 @@ jobs:
           path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
       - name: Publish checksum
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           apk=$(find src-tauri/gen/android/app/build/outputs/apk -name '*.apk' | head -n1)
           (cd "$(dirname "$apk")" && sha256sum "$(basename "$apk")") > "$(basename "$apk").sha256"
+          # Unlike the desktop .deb/.exe, nothing else attaches the APK to
+          # the actual GitHub release - tauri-action only does that for the
+          # desktop bundles it builds directly. Without this, v0.1.2's
+          # downloadable .apk asset would silently disappear from future
+          # releases.
+          gh release upload "${{ github.ref_name }}" "$apk" "$(basename "$apk").sha256" --clobber
       - uses: actions/upload-artifact@v4
         with:
           name: interviewscribe-android-apk-checksum
