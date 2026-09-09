@@ -12,7 +12,7 @@ async function expectNoAutomatedViolations(container: HTMLElement) {
   const result = await axe.run(container, {
     rules: {
       // jsdom has no layout or rendered color information. Contrast remains
-      // part of the manual light/dark visual protocol.
+      // covered separately by CSS-token tests and the real-render protocol.
       "color-contrast": { enabled: false },
     },
   });
@@ -26,6 +26,52 @@ async function expectNoAutomatedViolations(container: HTMLElement) {
 }
 
 describe("automated accessibility", () => {
+  it("exposes named landmarks, controls and a valid skip target", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten" || cmd === "client_log") return null;
+      if (cmd === "list_interviews") return [];
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+
+    render(<App />);
+    await screen.findByText("Aucun entretien enregistré");
+
+    expect(
+      screen.getByRole("navigation", { name: "Navigation principale" }),
+    ).toBeInTheDocument();
+    const main = screen.getByRole("main");
+    expect(main).toHaveAttribute("id", "content");
+    expect(main).toHaveAttribute("tabindex", "-1");
+    expect(
+      screen.getByRole("link", { name: "Aller au contenu" }),
+    ).toHaveAttribute("href", "#content");
+    for (const button of screen.getAllByRole("button")) {
+      expect(button).toHaveAccessibleName();
+    }
+  });
+
+  it("gives every preparation field an accessible name", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten" || cmd === "client_log") return null;
+      if (cmd === "list_interviews" || cmd === "list_input_devices") return [];
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /Nouvel entretien/ }));
+    await screen.findByRole("heading", { name: "Nouvel entretien" });
+
+    for (const field of [
+      ...screen.getAllByRole("combobox"),
+      ...screen.getAllByRole("textbox"),
+      ...screen.getAllByRole("spinbutton"),
+    ]) {
+      expect(field).toHaveAccessibleName();
+    }
+  });
+
   it("finds no detectable violation in the empty library", async () => {
     mockIPC((cmd) => {
       if (cmd === "plugin:event|listen") return 1;

@@ -168,6 +168,8 @@ et ne depend d'aucune donnee sensible.
   Rendu Chromium inspecte a 360/768/1440 px et protections de repli testees ;
   validation sur appareils physiques encore requise.
 - [ ] 5.6 `MATERIEL` Tester lecteur d'ecran sur Windows et Android.
+  Landmarks, lien d'evitement, noms des controles et annonces d'etat couverts
+  automatiquement ; campagnes NVDA et TalkBack sur appareils encore requises.
 
 ## 6. Performance et endurance
 
@@ -235,3 +237,4 @@ et ne depend d'aucune donnee sensible.
 | 2026-09-09 | 5.3 | Portee clavier documentee : navigation native, boucle modale et Echap testes ; aucun raccourci global reserve. |
 | 2026-09-09 | 5.4 (partiel) | Contraste des themes clair/sombre/systeme verrouille a 4,5:1 ; lisibilite sur ecran reel reste MATERIEL. |
 | 2026-09-09 | 5.5 (partiel) | Rendus Chromium 360/768/1440 inspectes ; texte long et protections anti-debordement testes, appareils reels restants. |
+| 2026-09-09 | 5.6 (partiel) | Semantique lecteur d'ecran automatisee ; validation vocale NVDA Windows et TalkBack Android reste MATERIEL. |
