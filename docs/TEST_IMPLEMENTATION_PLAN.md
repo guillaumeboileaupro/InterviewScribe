@@ -264,7 +264,9 @@ et ne depend d'aucune donnee sensible.
 - [x] 8.4 Ajouter workflow manuel pour tests modele/materiel avec compte rendu.
   Qualification modele declenchable dans le workflow nocturne ; attestation
   materielle a choix fermes et rapport JSON sans contenu libre ajoutee.
-- [ ] 8.5 Publier rapports WER/CER/DER, performance et packaging sans donnees brutes.
+- [x] 8.5 Publier rapports WER/CER/DER, performance et packaging sans donnees brutes.
+  Rapports JSON structures ajoutes aux workflows nocturne et release ; seuls
+  metriques, verdicts, tailles et SHA-256 sont publies.
 - [ ] 8.6 Bloquer une release si une preuve obligatoire manque, sans bloquer sur
   une validation explicitement classee `MATERIEL` hors environnement.
 

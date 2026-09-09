@@ -76,13 +76,14 @@ jobs:
           cargo test --release --manifest-path src-tauri/Cargo.toml synthetic_one_hour_stream_stays_bounded_without_losing_samples -- --nocapture 2>&1 | tee performance-metrics.log
       - name: Upload aggregate qualification logs
         if: always()
+        run: node scripts/create-qualification-report.mjs nightly nightly-report.json public-french-metrics.log ami-metrics.log performance-metrics.log
+      - name: Upload aggregate qualification report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: nightly-aggregate-metrics
           path: |
-            public-french-metrics.log
-            ami-metrics.log
-            performance-metrics.log
+            nightly-report.json
             tests/corpus/generated/report.json
           if-no-files-found: warn
           retention-days: 30
