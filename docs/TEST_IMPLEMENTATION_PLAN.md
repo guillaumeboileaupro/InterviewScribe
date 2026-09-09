@@ -255,7 +255,9 @@ et ne depend d'aucune donnee sensible.
 ## 8. Organisation CI finale
 
 - [x] 8.1 Conserver `pnpm check` obligatoire sur chaque pull request.
-- [ ] 8.2 Ajouter E2E desktop court sur pull request.
+- [x] 8.2 Ajouter E2E desktop court sur pull request.
+  Jobs Linux et Windows sur application installee : lancement, navigation,
+  modele hors ligne et demarrage d'import reel ; parcours long reste separe.
 - [ ] 8.3 Ajouter workflow nocturne pour corpus et performance.
 - [ ] 8.4 Ajouter workflow manuel pour tests modele/materiel avec compte rendu.
 - [ ] 8.5 Publier rapports WER/CER/DER, performance et packaging sans donnees brutes.
