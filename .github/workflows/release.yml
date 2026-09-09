@@ -260,3 +260,29 @@ jobs:
           name: interviewscribe-android-apk-checksum
           path: "*.sha256"
           if-no-files-found: error
+
+  android-emulator:
+    needs: android
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: interviewscribe-android-apk
+          path: android-apk
+      - name: Verify signed APK on an arm64-v8a emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: arm64-v8a
+          target: default
+          profile: pixel_6
+          disable-animations: true
+          script: bash scripts/e2e-android.sh "$(find android-apk -name '*.apk' | head -n1)"
+      - name: Upload Android diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: interviewscribe-android-emulator-diagnostics
+          path: android-test-artifacts/
+          if-no-files-found: ignore

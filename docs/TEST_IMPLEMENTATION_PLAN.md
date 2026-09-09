@@ -245,6 +245,8 @@ et ne depend d'aucune donnee sensible.
   Sentinelles synthetiques du profil applicatif et d'un export externe ajoutees
   aux jobs `.deb` et NSIS ; execution native du prochain tag requise avant validation.
 - [ ] 7.6 Tester l'APK sur emulateur arm64-v8a.
+  Job ARM64 ajoute : ABI, installation, lancement sans crash, processus et
+  desinstallation controles ; execution native du prochain tag requise.
 - [ ] 7.7 `MATERIEL` Tester installation, import `content://` et transcription sur
   un appareil Android physique.
 
