@@ -320,6 +320,12 @@ et ne depend d'aucune donnee sensible.
 | 2026-09-09 | 7.7 (prepare) | Campagne appareil physique AND-01 a AND-05 documentee ; execution materielle requise. |
 | 2026-09-09 | 8.1 | Job PR `check` aligne sur `pnpm check` ; 46 tests UI, build, confidentialite, clippy et 169 tests Rust valides localement. |
 | 2026-09-09 | 8.2 | E2E courts Linux et Windows confirmes sur PR : application installee, navigation, modele hors ligne et debut d'import reel. |
+| 2026-09-09 | 8.3 | Workflow nocturne ajoute : corpus public epingle, WER/CER/DER, soak synthetique et rapports sans audio. |
+| 2026-09-09 | 8.4 | Workflow manuel d'attestation materielle et protocole de rapport sans champ libre ajoutes. |
+| 2026-09-09 | 8.5 | Rapports JSON agreges de qualite, performance et packaging publies comme artefacts. |
+| 2026-09-09 | 8.6 | Gate de release exigeant les preuves Linux, Windows et Android automatisees ajoute et teste. |
+| 2026-09-09 | 9.1-9.6 | Progression Whisper, notes, lecteur audio, correlation temporelle, correctif console Windows, migrations et tests termines. |
+| 2026-09-09 | 9.7 (partiel) | Validation automatisee verte ; inspection des applications installees et Android encore requise. |
 
 ## 9. Retours utilisateurs — lecteur, notes et progression
 
