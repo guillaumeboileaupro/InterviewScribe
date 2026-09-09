@@ -254,7 +254,7 @@ et ne depend d'aucune donnee sensible.
 
 ## 8. Organisation CI finale
 
-- [ ] 8.1 Conserver `pnpm check` obligatoire sur chaque pull request.
+- [x] 8.1 Conserver `pnpm check` obligatoire sur chaque pull request.
 - [ ] 8.2 Ajouter E2E desktop court sur pull request.
 - [ ] 8.3 Ajouter workflow nocturne pour corpus et performance.
 - [ ] 8.4 Ajouter workflow manuel pour tests modele/materiel avec compte rendu.

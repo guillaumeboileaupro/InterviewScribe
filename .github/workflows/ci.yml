@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  web:
+  check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,26 +18,14 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm lint
-      - run: pnpm format:check
-      - run: pnpm test
-      - run: pnpm test:packaging
-      - run: pnpm test:privacy
-      - run: pnpm build
-
-  rust:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Tauri system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf cmake clang libasound2-dev
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
-      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-      - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - name: Install Tauri system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf cmake clang libasound2-dev
+      - run: pnpm install --frozen-lockfile
+      - name: Run the mandatory project check
+        run: pnpm check
 
   # Real E2E (docs/TEST_IMPLEMENTATION_PLAN.md item 2.5): drives the actual
   # installed application through @wdio/tauri-service's embedded WebDriver
