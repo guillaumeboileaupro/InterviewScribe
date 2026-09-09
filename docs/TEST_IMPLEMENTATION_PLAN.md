@@ -414,3 +414,43 @@ resolu : (a) deplacer le tag `v0.1.3` sur le nouveau commit corrige et
 relancer `release.yml` dessus, ou (b) laisser `v0.1.3` comme tentative
 abandonnee et cocher la prochaine version reelle `v0.1.4`. Choix de
 versionnement, pas technique - n'a pas ete tranche unilateralement.
+
+**Mise a jour (Claude, meme jour, 3e cycle CI reel)** : utilisateur a choisi
+l'option (a) - tag `v0.1.3` deplace deux fois de plus au fil des correctifs
+ci-dessous (dernier point: commit `4111b4b`, run `34404241014`).
+
+- Hypothese "race" du point precedent invalidee par un sondage complet de
+  20s qui n'a JAMAIS vu `user_version` passer a 1 sur les deux plateformes -
+  ni un crash (le process restait vivant), ni une simple course. Delai
+  remonte a 60s partout (commit `4111b4b`) :
+  - **Linux : corrige et confirme reellement** (job `desktop
+    (ubuntu-22.04, --bundles deb)` entierement vert, migration validee en
+    moins de 60s). Cause probable : demarrage a froid GTK/WebKitGTK lent sur
+    un runner CI neuf, coherent avec des observations deja faites plus tot
+    dans cette session sur la variabilite de demarrage de WebKitGTK.
+  - **Windows : toujours en echec a 60s**, meme message
+    (`user_version n'a pas atteint 1 dans le delai imparti`). Soit le
+    demarrage a froid y est encore plus lent (WebView2 + antivirus qui
+    scanne un .exe fraichement installe sont des causes plausibles sur les
+    runners Windows GitHub), soit une cause differente et non identifiee.
+    Prochaine etape suggeree : remonter encore le delai (ex. 120s) avant de
+    chercher plus loin, par simple elimination.
+- **Android emulator : ce n'est pas un probleme de lenteur.** Meme avec
+  `emulator-boot-timeout: 900` (15 min), le job echoue en ~16 min avec
+  `error: could not connect to TCP port 5554: Connection refused` juste
+  avant le timeout - le process emulateur ne repond jamais sur son port, ce
+  qui ressemble a un crash/echec de demarrage reel plutot qu'un simple
+  manque de temps. Un artefact de diagnostics est uploade
+  (`interviewscribe-android-emulator-diagnostics`) mais n'a pas ete
+  examine - necessite quelqu'un avec le contexte de conception de ce job
+  (pourquoi `arch: arm64-v8a` + `profile: pixel_6` + `api-level: 35`
+  precisement) pour interpreter les logs de l'emulateur lui-meme.
+
+**Recommandation pratique** : ces deux verifications (upgrade N-1, boot
+emulateur) sont neuves, jamais executees avec succes avant aujourd'hui, et
+bloquent `release-gate` donc toute publication. A evaluer : les rendre
+temporairement non-bloquantes (avertissement plutot qu'echec dur) le temps
+de les stabiliser separement, plutot que de bloquer indefiniment la
+publication d'une version par ailleurs prete (build desktop et APK tous les
+deux reussis a chaque tentative). Decision produit, pas technique - laissee
+ouverte plutot que tranchee unilateralement.
