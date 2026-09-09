@@ -148,7 +148,7 @@ E2E et leurs dependances restent hors de ce lot.
 Critere de sortie : chaque mesure est reproductible depuis un manifeste epingle
 et ne depend d'aucune donnee sensible.
 
-## 4. Audio et erreurs d'integration — EN COURS (Codex)
+## 4. Audio et erreurs d'integration — TERMINE
 
 - [x] 4.1 Ajouter de petites fixtures WAV, MP3, M4A, FLAC, OGG et AAC autorisees.
 - [x] 4.2 Tester mono, stereo, frequences d'echantillonnage et durees extremes.
