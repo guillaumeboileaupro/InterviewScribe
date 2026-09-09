@@ -7,6 +7,7 @@ mod diarization;
 mod error;
 pub mod evaluation;
 mod export;
+pub mod performance;
 mod recovery;
 mod transcription;
 

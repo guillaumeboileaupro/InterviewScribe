@@ -221,7 +221,7 @@ et ne depend d'aucune donnee sensible.
 
 ## 6. Performance et endurance
 
-- [ ] 6.1 Ajouter un collecteur sans contenu sensible : latence, CPU, memoire,
+- [x] 6.1 Ajouter un collecteur sans contenu sensible : latence, CPU, memoire,
   batterie, temperature et volume disque.
 - [ ] 6.2 Definir seuils p50/p95 et budget memoire par plateforme.
 - [ ] 6.3 Executer une session synthetique longue sans microphone.
@@ -286,3 +286,4 @@ et ne depend d'aucune donnee sensible.
 | 2026-09-09 | 5.4 (partiel) | Contraste des themes clair/sombre/systeme verrouille a 4,5:1 ; lisibilite sur ecran reel reste MATERIEL. |
 | 2026-09-09 | 5.5 (partiel) | Rendus Chromium 360/768/1440 inspectes ; texte long et protections anti-debordement testes, appareils reels restants. |
 | 2026-09-09 | 5.6 (partiel) | Semantique lecteur d'ecran automatisee ; validation vocale NVDA Windows et TalkBack Android reste MATERIEL. |
+| 2026-09-09 | 6.1 | Collecteur agrege ajoute : latence, CPU/RSS Linux, taille fichier, batterie/temperature si exposees ; aucune donnee source serialisee. |

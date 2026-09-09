@@ -166,6 +166,21 @@ n'interpole jamais ce type de contenu. `scripts/privacy.test.mjs` interdit par
 ailleurs `log::`/`tracing::` en production: ce mecanisme est volontairement
 un fichier fait maison, pas un plugin de logging generique.
 
+### Mesures de performance locales
+
+`src-tauri/src/performance.rs` fournit un collecteur borne aux donnees
+techniques agregees : temps ecoule, latence d'une operation, pourcentage CPU
+du processus, memoire residente, taille en octets du fichier surveille, batterie
+et temperature lorsqu'elles sont exposees par le systeme. Les sondes CPU/RSS et
+`sysfs` sont actives sous Linux ; une mesure indisponible reste `null` et n'est
+jamais remplacee par une valeur inventee.
+
+Le chemin du fichier sert uniquement a lire ses metadonnees et n'apparait pas
+dans `PerformanceSample`. Audio, transcription, titre, locuteur, chemin et
+identifiant sont exclus du format serialise. Les seuils et rapports agreges
+sont definis separement afin que le collecteur ne decide jamais seul qu'une
+plateforme est validee.
+
 
 ## Modele fourni avec l’application
 
