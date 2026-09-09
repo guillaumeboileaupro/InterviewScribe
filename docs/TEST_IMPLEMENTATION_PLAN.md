@@ -231,7 +231,7 @@ et ne depend d'aucune donnee sensible.
 
 ## 7. Packaging, mise a niveau et premier lancement
 
-- [ ] 7.1 Construire une fixture de base/projet au schema N-1.
+- [x] 7.1 Construire une fixture de base/projet au schema N-1.
 - [ ] 7.2 Installer N-1 puis N sous Linux et verifier migration et donnees.
 - [ ] 7.3 Installer N-1 puis N sous Windows et verifier migration et donnees.
 - [ ] 7.4 Lancer chaque artefact installe et verifier le modele hors connexion.
@@ -289,3 +289,4 @@ et ne depend d'aucune donnee sensible.
 | 2026-09-09 | 6.1 | Collecteur agrege ajoute : latence, CPU/RSS Linux, taille fichier, batterie/temperature si exposees ; aucune donnee source serialisee. |
 | 2026-09-09 | 6.2 | Budgets Linux/Windows/Android et verdicts p50/p95/RSS implementes ; metriques absentes explicitement refusees. |
 | 2026-09-09 | 6.3 | Une heure synthetique executee en trames de 20 ms : 601 fenetres, pic 96 000 echantillons, aucune perte sur 57,6 M, 36 ms mur, 230 400 044 octets projetes. |
+| 2026-09-09 | 7.1 | Fixture SQL v0 lisible ajoutee avec projet synthetique complet ; migration v1, donnees, brut et idempotence testes. |

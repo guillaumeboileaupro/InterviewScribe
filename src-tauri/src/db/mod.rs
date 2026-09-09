@@ -5,6 +5,9 @@ pub mod schema;
 pub mod segments;
 pub mod speakers;
 
+#[cfg(test)]
+mod upgrade_fixture_tests;
+
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
