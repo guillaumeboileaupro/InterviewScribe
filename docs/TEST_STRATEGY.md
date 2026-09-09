@@ -131,8 +131,8 @@ et consenti. Le rapport conserve seulement mesures et resultat, jamais l'audio.
 | Declencheur | Suites obligatoires |
 | --- | --- |
 | Commit local | Tests lies au changement; `pnpm check` avant livraison. |
-| Pull request | `pnpm check` reparti entre jobs web et Rust. |
-| Nuit / manuel | Whisper reel, corpus audio, E2E desktop et tests longs sans materiel. |
+| Pull request | Job obligatoire `pnpm check`, puis E2E courts sur applications `.deb` et NSIS installees. |
+| Nuit / manuel | Workflow quotidien et manuel : Whisper reel, corpus public epingle, seuils WER/CER/DER et soak synthetique d'une heure; aucun audio publie. |
 | Tag de version | Construction native, installation, lancement, mise a niveau, desinstallation, signature et sommes de controle. |
 | Qualification Android | Emulateur puis appareil arm64-v8a physique, avec rapport distinct. |
 

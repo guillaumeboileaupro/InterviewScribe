@@ -1,0 +1,88 @@
+name: Nightly qualification
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-qualification
+  cancel-in-progress: false
+
+jobs:
+  corpus-and-performance:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install native dependencies
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf cmake clang libasound2-dev unzip
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/cache@v4
+        with:
+          path: |
+            src-tauri/resources/models/*.bin
+            src-tauri/resources/models/*.onnx
+          key: nightly-models-${{ hashFiles('src-tauri/resources/models/*manifest.json') }}
+      - name: Prepare checksum-verified models
+        run: pnpm models:prepare
+      - name: Validate public corpus manifest
+        run: pnpm test:corpus-manifest
+      - name: Download pinned public corpus sources
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/interviewscribe-corpus/annotations"
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/interviewscribe-corpus/ami.wav" "https://groups.inf.ed.ac.uk/ami/AMICorpusMirror/amicorpus/ES2002a/audio/ES2002a.Mix-Headset.wav"
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/interviewscribe-corpus/annotations.zip" "https://groups.inf.ed.ac.uk/ami/AMICorpusAnnotations/ami_public_manual_1.6.2.zip"
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/interviewscribe-corpus/french.ogg" "https://commons.wikimedia.org/wiki/Special:Redirect/file/Fr-avoir%20un%20chat%20dans%20la%20gorge.ogg"
+          echo '9c76866990fcc8b84006dc32d273ad99df439090b748ebe72103bb78c3216ee7  '${RUNNER_TEMP}'/interviewscribe-corpus/ami.wav' | sha256sum --check
+          echo 'b56e5babb2496b8795deeeda7e71178d7fbc9963f94276cf2a3f4b56ebbc9f9d  '${RUNNER_TEMP}'/interviewscribe-corpus/annotations.zip' | sha256sum --check
+          echo 'bf667abb1a8811ef3ed96f8838abc895122f717242b3679f9efb91394f3fe5fd  '${RUNNER_TEMP}'/interviewscribe-corpus/french.ogg' | sha256sum --check
+          unzip -q "$RUNNER_TEMP/interviewscribe-corpus/annotations.zip" -d "$RUNNER_TEMP/interviewscribe-corpus/annotations"
+      - name: Generate deterministic corpus fixtures
+        run: |
+          set -euo pipefail
+          words=$(find "$RUNNER_TEMP/interviewscribe-corpus/annotations" -name 'ES2002a.A.words.xml' -print -quit)
+          [ -n "$words" ] || { echo 'AMI word annotations not found'; exit 1; }
+          pnpm corpus:prepare "$RUNNER_TEMP/interviewscribe-corpus/ami.wav" "$(dirname "$words")"
+      - name: Run public French WER/CER qualification
+        env:
+          INTERVIEWSCRIBE_TEST_MODEL: src-tauri/resources/models/ggml-large-v3-turbo-q5_0.bin
+          INTERVIEWSCRIBE_TEST_WAV: ${{ runner.temp }}/interviewscribe-corpus/french.ogg
+        run: |
+          set -o pipefail
+          cargo test --release --manifest-path src-tauri/Cargo.toml whisper_public_french_quality_thresholds -- --ignored --nocapture 2>&1 | tee public-french-metrics.log
+      - name: Run AMI WER/CER/DER qualification
+        env:
+          INTERVIEWSCRIBE_TEST_MODEL: src-tauri/resources/models/ggml-large-v3-turbo-q5_0.bin
+          INTERVIEWSCRIBE_TEST_DIARIZATION_MODEL: src-tauri/resources/models/wespeaker_en_voxceleb_CAM++.onnx
+          INTERVIEWSCRIBE_TEST_WAV: tests/corpus/generated/multi-clean-4.wav
+          INTERVIEWSCRIBE_TEST_AMI_REFERENCE: tests/corpus/generated/ami-reference.json
+        run: |
+          set -o pipefail
+          cargo test --release --manifest-path src-tauri/Cargo.toml ami_four_speaker_quality_metrics -- --ignored --nocapture 2>&1 | tee ami-metrics.log
+      - name: Run synthetic one-hour performance qualification
+        run: |
+          set -o pipefail
+          cargo test --release --manifest-path src-tauri/Cargo.toml synthetic_one_hour_stream_stays_bounded_without_losing_samples -- --nocapture 2>&1 | tee performance-metrics.log
+      - name: Upload aggregate qualification logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-aggregate-metrics
+          path: |
+            public-french-metrics.log
+            ami-metrics.log
+            performance-metrics.log
+            tests/corpus/generated/report.json
+          if-no-files-found: warn
+          retention-days: 30

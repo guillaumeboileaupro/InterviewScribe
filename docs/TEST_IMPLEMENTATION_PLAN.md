@@ -258,7 +258,9 @@ et ne depend d'aucune donnee sensible.
 - [x] 8.2 Ajouter E2E desktop court sur pull request.
   Jobs Linux et Windows sur application installee : lancement, navigation,
   modele hors ligne et demarrage d'import reel ; parcours long reste separe.
-- [ ] 8.3 Ajouter workflow nocturne pour corpus et performance.
+- [x] 8.3 Ajouter workflow nocturne pour corpus et performance.
+  Planification quotidienne et declenchement manuel ajoutes : corpus public
+  epingle, WER/CER/DER, soak synthetique et artefacts agreges sans audio.
 - [ ] 8.4 Ajouter workflow manuel pour tests modele/materiel avec compte rendu.
 - [ ] 8.5 Publier rapports WER/CER/DER, performance et packaging sans donnees brutes.
 - [ ] 8.6 Bloquer une release si une preuve obligatoire manque, sans bloquer sur
