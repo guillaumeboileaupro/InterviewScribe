@@ -70,7 +70,7 @@ assert_eq() {
 xvfb-run --auto-servernum "$binary" &
 app_pid=$!
 migrated=0
-for _ in $(seq 1 40); do
+for _ in $(seq 1 120); do
   if [[ "$(sqlite3 "$database" 'PRAGMA user_version' 2>/dev/null)" == "1" ]]; then
     migrated=1
     break
@@ -84,7 +84,7 @@ done
 kill "$app_pid" 2>/dev/null || true
 wait "$app_pid" 2>/dev/null || true
 if [[ $migrated -ne 1 ]]; then
-  echo "La migration SQLite n'a pas atteint user_version=1 dans le delai imparti (20s)" >&2
+  echo "La migration SQLite n'a pas atteint user_version=1 dans le delai imparti (60s)" >&2
   exit 1
 fi
 

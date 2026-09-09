@@ -299,6 +299,12 @@ jobs:
           target: default
           profile: pixel_6
           disable-animations: true
+          # An arm64-v8a guest on this x86_64 host has no KVM passthrough for
+          # that guest arch (see the runs-on comment above) - it boots via
+          # much slower QEMU software emulation, which blew past this
+          # action's default boot timeout on the first real attempt
+          # ("Timeout waiting for emulator to boot").
+          emulator-boot-timeout: 900
           script: bash scripts/e2e-android.sh "$(find android-apk -name '*.apk' | head -n1)"
       - name: Upload Android diagnostics
         if: always()

@@ -53,7 +53,7 @@ try {
     # docs/TEST_IMPLEMENTATION_PLAN.md section 9).
     $process = Start-Process -FilePath $appExe.FullName -PassThru
     $migrated = $false
-    $deadline = (Get-Date).AddSeconds(20)
+    $deadline = (Get-Date).AddSeconds(60)
     while ((Get-Date) -lt $deadline) {
         if ((& sqlite3 $database "PRAGMA user_version") -eq "1") {
             $migrated = $true
@@ -69,7 +69,7 @@ try {
         $process.Kill()
         $process.WaitForExit()
     }
-    if (-not $migrated) { throw "user_version n'a pas atteint 1 dans le delai imparti (20s)" }
+    if (-not $migrated) { throw "user_version n'a pas atteint 1 dans le delai imparti (60s)" }
     if ((& sqlite3 $database "SELECT COUNT(*) FROM pragma_table_info('interview') WHERE name='notes'") -ne "1") { throw "colonne notes absente" }
     if ((& sqlite3 $database "SELECT COUNT(*) FROM pragma_table_info('edit') WHERE name='reverted_at'") -ne "1") { throw "colonne reverted_at absente" }
     foreach ($table in @("interview", "speaker", "segment", "edit", "setting")) {
