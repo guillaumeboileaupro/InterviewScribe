@@ -22,6 +22,8 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -30,7 +32,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev sqlite3 xvfb
       - run: pnpm install --frozen-lockfile
       - name: Prepare bundled Whisper model (checksum verified)
         run: pnpm models:prepare
@@ -43,6 +45,32 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+
+      - name: Download previous Debian release
+        if: matrix.platform == 'ubuntu-22.04'
+        id: previous-deb
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          current='${{ github.ref_name }}'
+          previous=$(git tag --sort=-version:refname | awk -v current="$current" '$0 != current { print; exit }')
+          [ -n "$previous" ] || { echo "No previous release tag found"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/previous-release"
+          gh release download "$previous" --pattern '*.deb' --dir "$RUNNER_TEMP/previous-release"
+          old_deb=$(find "$RUNNER_TEMP/previous-release" -name '*.deb' | head -n1)
+          [ -n "$old_deb" ] || { echo "No Debian package found for $previous"; exit 1; }
+          echo "path=$old_deb" >> "$GITHUB_OUTPUT"
+          echo "tag=$previous" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Debian upgrade preserves N-1 data
+        if: matrix.platform == 'ubuntu-22.04'
+        shell: bash
+        run: |
+          set -euo pipefail
+          new_deb=$(find src-tauri/target/release/bundle/deb -name '*.deb' | head -n1)
+          bash scripts/test-upgrade-linux.sh '${{ steps.previous-deb.outputs.path }}' "$new_deb"
 
       - name: Verify install and uninstall (Debian package)
         if: matrix.platform == 'ubuntu-22.04'
