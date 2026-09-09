@@ -90,9 +90,9 @@ de `cargo test` normal et leur execution doit etre rapportee separement.
 | PRIV-01 | Aucun contenu sensible dans les logs ou le reseau | Integration + audit | Toutes | Automatise partiel | CSP limite `connect-src` a IPC; sources de production sans client reseau ni journalisation. Ajouter un test dynamique avec proxy bloque. |
 | DEL-01 | Suppression coordonnee DB, audio, cache et exports geres | Integration + E2E | Toutes | Automatise | Backend: cascade SQLite et audio prive; chemin externe refuse et rollback testes. UI: confirmation, succes et erreur testes. Les exports choisis par l'utilisateur sont explicitement hors gestion. |
 | PKG-01 | Installation neuve et desinstallation du paquet | Packaging | Linux/Windows | Valide en CI | `.deb` et NSIS verifies silencieusement sur runners natifs. |
-| PKG-02 | Mise a niveau conserve les donnees et migre le schema | Packaging + E2E | Linux/Windows/Android | Planifie | Installer N-1 puis N et verifier projet, schema et desinstallation. |
+| PKG-02 | Mise a niveau conserve les donnees et migre le schema | Packaging + E2E | Linux/Windows/Android | Automatise partiel | Fixture N-1 et jobs `.deb`/NSIS ajoutes; migrations, donnees et sentinelles hors scope sont controlees. Execution native au prochain tag et mise a niveau Android restent requises. |
 | AND-01 | APK signee arm64-v8a | Packaging | Android | Valide en CI | Signature verifiee avec `apksigner`; fonctionnement non implique. |
-| AND-02 | Import `content://` puis transcription hors ligne | E2E | Android | Planifie | Compilation seulement; test emulateur/appareil absent. |
+| AND-02 | Import `content://` puis transcription hors ligne | E2E | Android | Automatise partiel | Job emulateur arm64-v8a ajoute pour installation/lancement sans crash; son execution et le parcours `content://` complet restent requis. Protocole physique AND-04 documente. |
 | AND-03 | Micro, verrouillage, interruption, batterie et temperature | Materiel | Android | Bloque | Appareil physique necessaire. |
 
 ## Suites et commandes
