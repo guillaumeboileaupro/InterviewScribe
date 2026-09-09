@@ -8,11 +8,14 @@ if (!directory || !output) {
   );
 }
 
-const requiredPlatforms = new Set([
-  "ubuntu-22.04",
-  "windows-latest",
-  "android-arm64-v8a",
-]);
+const requiredPlatforms = new Set(["ubuntu-22.04", "windows-latest"]);
+// android-arm64-v8a is not in requiredPlatforms: its emulator verification
+// job is temporarily non-blocking (see docs/TEST_IMPLEMENTATION_PLAN.md
+// section 9 - the emulator itself fails to boot in CI, unrelated to the APK
+// build, which succeeds and is checksummed independently). Its report is
+// still included and validated below when present, just not mandatory -
+// this file must never fabricate an "installed/launched/uninstalled" report
+// for a platform that was never actually verified.
 const reports = [];
 for (const name of await readdir(directory)) {
   if (!name.endsWith(".json")) continue;
