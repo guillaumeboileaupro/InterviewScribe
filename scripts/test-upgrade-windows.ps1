@@ -45,16 +45,31 @@ try {
     $appExe = Find-AppExecutable
     if (-not $appExe) { throw "La version N ne s'est pas installee" }
 
+    # Poll for the migration's own completion signal instead of waiting a
+    # fixed duration then killing and hoping: a GUI app never exits on its
+    # own, so a fixed-wait-then-kill race can inspect the database before
+    # schema::init has actually committed user_version - this was the real,
+    # confirmed cause of a prior release failure (see
+    # docs/TEST_IMPLEMENTATION_PLAN.md section 9).
     $process = Start-Process -FilePath $appExe.FullName -PassThru
-    if (-not $process.WaitForExit(20000)) {
+    $migrated = $false
+    $deadline = (Get-Date).AddSeconds(20)
+    while ((Get-Date) -lt $deadline) {
+        if ((& sqlite3 $database "PRAGMA user_version") -eq "1") {
+            $migrated = $true
+            break
+        }
+        if ($process.HasExited) {
+            Write-Warning "Le processus de la version N s'est arrete avant la fin de la migration (code $($process.ExitCode))"
+            break
+        }
+        Start-Sleep -Milliseconds 500
+    }
+    if (-not $process.HasExited) {
         $process.Kill()
         $process.WaitForExit()
     }
-    elseif ($process.ExitCode -ne 0) {
-        throw "Le lancement de la version N a echoue: code $($process.ExitCode)"
-    }
-
-    if ((& sqlite3 $database "PRAGMA user_version") -ne "1") { throw "user_version attendu: 1" }
+    if (-not $migrated) { throw "user_version n'a pas atteint 1 dans le delai imparti (20s)" }
     if ((& sqlite3 $database "SELECT COUNT(*) FROM pragma_table_info('interview') WHERE name='notes'") -ne "1") { throw "colonne notes absente" }
     if ((& sqlite3 $database "SELECT COUNT(*) FROM pragma_table_info('edit') WHERE name='reverted_at'") -ne "1") { throw "colonne reverted_at absente" }
     foreach ($table in @("interview", "speaker", "segment", "edit", "setting")) {

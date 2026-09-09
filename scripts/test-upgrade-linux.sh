@@ -54,15 +54,6 @@ installed_new=$(dpkg-query -W -f='${Version}' "$new_package")
 binary=$(dpkg -L "$new_package" | awk '/^\/usr\/bin\// { print; exit }')
 [[ -n "$binary" && -x "$binary" ]]
 
-set +e
-timeout 20s xvfb-run --auto-servernum "$binary"
-launch_status=$?
-set -e
-if [[ $launch_status -ne 0 && $launch_status -ne 124 ]]; then
-  echo "Le lancement de la version N a echoue: code $launch_status" >&2
-  exit 1
-fi
-
 assert_eq() {
   local label=$1 expected=$2 actual=$3
   if [[ "$actual" != "$expected" ]]; then
@@ -70,6 +61,32 @@ assert_eq() {
     exit 1
   fi
 }
+
+# Poll for the migration's own completion signal instead of waiting a fixed
+# duration then killing and hoping: a GUI app never exits on its own, so a
+# fixed-wait-then-kill race can inspect the database before `schema::init`
+# has actually committed `user_version` - this was the real, confirmed cause
+# of a prior release failure (docs/TEST_IMPLEMENTATION_PLAN.md section 9).
+xvfb-run --auto-servernum "$binary" &
+app_pid=$!
+migrated=0
+for _ in $(seq 1 40); do
+  if [[ "$(sqlite3 "$database" 'PRAGMA user_version' 2>/dev/null)" == "1" ]]; then
+    migrated=1
+    break
+  fi
+  if ! kill -0 "$app_pid" 2>/dev/null; then
+    echo "Le processus de la version N s'est arrete avant la fin de la migration" >&2
+    break
+  fi
+  sleep 0.5
+done
+kill "$app_pid" 2>/dev/null || true
+wait "$app_pid" 2>/dev/null || true
+if [[ $migrated -ne 1 ]]; then
+  echo "La migration SQLite n'a pas atteint user_version=1 dans le delai imparti (20s)" >&2
+  exit 1
+fi
 
 assert_eq "user_version" "1" "$(sqlite3 "$database" 'PRAGMA user_version')"
 assert_eq "colonne interview.notes" "1" \
