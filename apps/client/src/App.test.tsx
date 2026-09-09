@@ -399,11 +399,11 @@ describe("App", () => {
     });
 
     render(<App />);
-    fireEvent.click(
-      await screen.findByRole("button", {
-        name: "Supprimer Entretien clavier",
-      }),
-    );
+    const deleteButton = await screen.findByRole("button", {
+      name: "Supprimer Entretien clavier",
+    });
+    deleteButton.focus();
+    fireEvent.click(deleteButton);
     await waitFor(() =>
       expect(
         screen.getByRole("button", { name: "Conserver l’entretien" }),
@@ -417,6 +417,53 @@ describe("App", () => {
     expect(
       screen.getByText("Entretien clavier — transcribed"),
     ).toBeInTheDocument();
+    expect(deleteButton).toHaveFocus();
+  });
+
+  it("keeps tab focus inside the deletion confirmation in DOM order", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten") return null;
+      if (cmd === "list_interviews")
+        return [
+          {
+            id: 7,
+            title: "Entretien focus",
+            language: "fr",
+            mode: "posteriori",
+            audio_path: "/audio/7.wav",
+            status: "transcribed",
+            error_message: null,
+            created_at: "0",
+            updated_at: "0",
+          },
+        ];
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+
+    render(<App />);
+    const deleteButton = await screen.findByRole("button", {
+      name: "Supprimer Entretien focus",
+    });
+    deleteButton.focus();
+    fireEvent.click(deleteButton);
+    const cancelButton = screen.getByRole("button", {
+      name: "Conserver l’entretien",
+    });
+    const confirmButton = screen.getByRole("button", {
+      name: "Supprimer définitivement",
+    });
+    await waitFor(() => expect(cancelButton).toHaveFocus());
+
+    confirmButton.focus();
+    fireEvent.keyDown(document, { key: "Tab" });
+    expect(cancelButton).toHaveFocus();
+
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    expect(confirmButton).toHaveFocus();
+
+    fireEvent.click(cancelButton);
+    expect(deleteButton).toHaveFocus();
   });
 
   it("shows the bundled Turbo model without any download action", async () => {

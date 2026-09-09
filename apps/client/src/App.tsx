@@ -109,6 +109,8 @@ export default function App() {
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const deleteCancelRef = useRef<HTMLButtonElement | null>(null);
+  const deleteConfirmRef = useRef<HTMLButtonElement | null>(null);
+  const deleteTriggerRef = useRef<HTMLElement | null>(null);
 
   const [editingSpeakerId, setEditingSpeakerId] = useState<number | null>(null);
   const [speakerDraftName, setSpeakerDraftName] = useState("");
@@ -160,10 +162,31 @@ export default function App() {
       if (event.key === "Escape" && !deleteBusy) {
         setDeleteCandidate(null);
         setDeleteError(null);
+        deleteTriggerRef.current?.focus();
+      }
+    };
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== "Tab" || deleteBusy) return;
+      if (
+        event.shiftKey &&
+        document.activeElement === deleteCancelRef.current
+      ) {
+        event.preventDefault();
+        deleteConfirmRef.current?.focus();
+      } else if (
+        !event.shiftKey &&
+        document.activeElement === deleteConfirmRef.current
+      ) {
+        event.preventDefault();
+        deleteCancelRef.current?.focus();
       }
     };
     document.addEventListener("keydown", closeOnEscape);
-    return () => document.removeEventListener("keydown", closeOnEscape);
+    document.addEventListener("keydown", trapFocus);
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("keydown", trapFocus);
+    };
   }, [deleteCandidate, deleteBusy]);
 
   useEffect(() => {
@@ -240,8 +263,18 @@ export default function App() {
   };
 
   const requestInterviewDeletion = (interview: Interview) => {
+    deleteTriggerRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
     setDeleteError(null);
     setDeleteCandidate(interview);
+  };
+
+  const cancelInterviewDeletion = () => {
+    setDeleteCandidate(null);
+    setDeleteError(null);
+    deleteTriggerRef.current?.focus();
   };
 
   const confirmInterviewDeletion = async () => {
@@ -836,14 +869,12 @@ export default function App() {
                     ref={deleteCancelRef}
                     className="secondary"
                     disabled={deleteBusy}
-                    onClick={() => {
-                      setDeleteCandidate(null);
-                      setDeleteError(null);
-                    }}
+                    onClick={cancelInterviewDeletion}
                   >
                     Conserver l’entretien
                   </button>
                   <button
+                    ref={deleteConfirmRef}
                     className="dangerButton"
                     disabled={deleteBusy}
                     onClick={confirmInterviewDeletion}
