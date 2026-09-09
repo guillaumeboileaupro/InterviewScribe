@@ -239,6 +239,8 @@ et ne depend d'aucune donnee sensible.
   Script et job de release ajoutes ; execution native du prochain tag requise
   avant validation.
 - [ ] 7.4 Lancer chaque artefact installe et verifier le modele hors connexion.
+  `.deb` et NSIS installes couverts en CI avec trafic sortant bloque et etat du
+  modele verifie dans l'interface ; APK installee reste dependante de 7.6.
 - [ ] 7.5 Verifier desinstallation sans effacer les donnees utilisateur hors scope.
 - [ ] 7.6 Tester l'APK sur emulateur arm64-v8a.
 - [ ] 7.7 `MATERIEL` Tester installation, import `content://` et transcription sur

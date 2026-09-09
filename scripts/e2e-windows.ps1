@@ -33,6 +33,7 @@ if (-not $appExe) {
 }
 $env:INTERVIEWSCRIBE_E2E_BINARY = $appExe.FullName
 Write-Host "Installed: $($appExe.FullName)"
+$firewallRuleName = "InterviewScribe-E2E-Offline-$PID"
 
 # Isolate app data (Tauri resolves app_data_dir() from %APPDATA% on
 # Windows) to a throwaway profile - never the real user's interviews.
@@ -42,10 +43,14 @@ $env:APPDATA = $profileDir
 $env:LOCALAPPDATA = $profileDir
 
 try {
+    if ($env:INTERVIEWSCRIBE_E2E_OFFLINE -eq "1") {
+        New-NetFirewallRule -DisplayName $firewallRuleName -Direction Outbound -Program $appExe.FullName -Action Block | Out-Null
+    }
     pnpm exec wdio run e2e/wdio.conf.mjs @WdioArgs
     $testExitCode = $LASTEXITCODE
 }
 finally {
+    Remove-NetFirewallRule -DisplayName $firewallRuleName -ErrorAction SilentlyContinue
     Get-Process -Name ($appExe.BaseName) -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Remove-Item $installDir -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item $profileDir -Recurse -Force -ErrorAction SilentlyContinue

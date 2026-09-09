@@ -17,12 +17,26 @@ if [ ! -x "$BINARY" ]; then
   exit 1
 fi
 
-PROFILE_DIR=$(mktemp -d)
-trap 'rm -rf "$PROFILE_DIR"' EXIT
+PROFILE_DIR=$(mktemp -d /tmp/interviewscribe-e2e.XXXXXX)
+OFFLINE_RULE=0
+cleanup() {
+  if [[ $OFFLINE_RULE -eq 1 ]]; then
+    sudo iptables -D OUTPUT ! -o lo -m owner --uid-owner "$(id -u)" -m comment --comment interviewscribe-e2e-offline -j REJECT || true
+  fi
+  case "$PROFILE_DIR" in
+    /tmp/interviewscribe-e2e.*) rm -rf -- "$PROFILE_DIR" ;;
+  esac
+}
+trap cleanup EXIT
 
 export XDG_DATA_HOME="$PROFILE_DIR/data"
 export XDG_CONFIG_HOME="$PROFILE_DIR/config"
 export XDG_CACHE_HOME="$PROFILE_DIR/cache"
 mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME"
+
+if [[ "${INTERVIEWSCRIBE_E2E_OFFLINE:-0}" == "1" ]]; then
+  sudo iptables -I OUTPUT 1 ! -o lo -m owner --uid-owner "$(id -u)" -m comment --comment interviewscribe-e2e-offline -j REJECT
+  OFFLINE_RULE=1
+fi
 
 pnpm exec wdio run e2e/wdio.conf.mjs "$@"

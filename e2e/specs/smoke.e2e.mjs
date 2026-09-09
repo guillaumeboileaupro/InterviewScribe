@@ -48,6 +48,10 @@ describe("InterviewScribe desktop app", () => {
       },
     );
 
+    const settingsText = await $("main").getText();
+    expect(settingsText).toContain("Prêt à transcrire hors connexion.");
+    expect(settingsText).not.toContain("Le modèle intégré est invalide");
+
     const downloadButtons = await $$("button*=Télécharger");
     expect(downloadButtons.length).toBe(0);
   });

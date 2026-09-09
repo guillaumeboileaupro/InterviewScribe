@@ -57,7 +57,7 @@ jobs:
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
       - name: Install Tauri and E2E system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf cmake clang libasound2-dev xdotool xvfb
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf cmake clang libasound2-dev xdotool xvfb iptables
       - run: pnpm install --frozen-lockfile
       - name: Prepare bundled Whisper models (checksum verified)
         run: pnpm models:prepare
@@ -68,6 +68,8 @@ jobs:
       - name: Install the built package
         run: sudo dpkg -i src-tauri/target/release/bundle/deb/*.deb
       - name: Run E2E suite
+        env:
+          INTERVIEWSCRIBE_E2E_OFFLINE: "1"
         run: xvfb-run --auto-servernum pnpm test:e2e:linux
 
   # Windows counterpart to e2e-linux (item 2.6): same suite, same embedded
@@ -92,4 +94,6 @@ jobs:
           VITE_WDIO_E2E: "true"
         run: pnpm tauri build --bundles nsis --features wdio-e2e --config src-tauri/tauri.wdio-e2e.conf.json
       - name: Run E2E suite
+        env:
+          INTERVIEWSCRIBE_E2E_OFFLINE: "1"
         run: pnpm test:e2e:windows
