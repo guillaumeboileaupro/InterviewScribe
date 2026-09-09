@@ -121,6 +121,32 @@ struct FrameState {
     last_level_emit: std::time::Instant,
 }
 
+fn write_mono_samples<W: std::io::Write + std::io::Seek>(
+    writer: &mut hound::WavWriter<W>,
+    samples: &[f32],
+) -> Result<(), hound::Error> {
+    for sample in samples {
+        writer.write_sample(*sample)?;
+    }
+    writer.flush()
+}
+
+fn write_or_report<W: std::io::Write + std::io::Seek>(
+    writer: &mut Option<hound::WavWriter<W>>,
+    samples: &[f32],
+    events: &mpsc::Sender<SessionEvent>,
+) {
+    let Some(active_writer) = writer.as_mut() else {
+        return;
+    };
+    if let Err(error) = write_mono_samples(active_writer, samples) {
+        let _ = events.send(SessionEvent::Error(format!(
+            "ecriture audio interrompue: {error}"
+        )));
+        writer.take();
+    }
+}
+
 impl FrameState {
     fn new() -> Self {
         Self {
@@ -221,11 +247,9 @@ fn process_input(
     };
 
     if let Ok(mut guard) = writer.lock() {
-        if let Some(writer) = guard.as_mut() {
-            for sample in &mono {
-                let _ = writer.write_sample(*sample);
-            }
-        }
+        // Stop writing after the first storage failure so it is reported once
+        // and the recoverable prefix is not touched by later callbacks.
+        write_or_report(&mut guard, &mono, events);
     }
 
     let energy = rms(&mono);
@@ -393,6 +417,81 @@ fn run_capture_thread(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Clone)]
+    struct LimitedWriter {
+        state: Arc<Mutex<(usize, Vec<u8>, usize)>>,
+    }
+
+    impl std::io::Write for LimitedWriter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            let mut state = self.state.lock().unwrap();
+            let available = state.2.saturating_sub(state.0);
+            if available == 0 {
+                return Err(std::io::Error::from_raw_os_error(28));
+            }
+            let written = available.min(bytes.len());
+            let position = state.0;
+            if state.1.len() < position + written {
+                state.1.resize(position + written, 0);
+            }
+            state.1[position..position + written].copy_from_slice(&bytes[..written]);
+            state.0 += written;
+            Ok(written)
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl std::io::Seek for LimitedWriter {
+        fn seek(&mut self, position: std::io::SeekFrom) -> std::io::Result<u64> {
+            let mut state = self.state.lock().unwrap();
+            let next = match position {
+                std::io::SeekFrom::Start(value) => value as i64,
+                std::io::SeekFrom::Current(value) => state.0 as i64 + value,
+                std::io::SeekFrom::End(value) => state.1.len() as i64 + value,
+            };
+            if next < 0 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "negative seek",
+                ));
+            }
+            state.0 = next as usize;
+            Ok(state.0 as u64)
+        }
+    }
+
+    #[test]
+    fn disk_full_during_incremental_write_is_propagated_and_keeps_prefix() {
+        let state = Arc::new(Mutex::new((0, Vec::new(), usize::MAX)));
+        let sink = LimitedWriter {
+            state: state.clone(),
+        };
+        let writer = hound::WavWriter::new(sink, wav_spec(16_000)).unwrap();
+        let header_len = state.lock().unwrap().1.len();
+        state.lock().unwrap().2 = header_len + 8;
+        let mut writer = Some(writer);
+        let (events_tx, events_rx) = mpsc::channel();
+
+        write_or_report(&mut writer, &[0.25; 100], &events_tx);
+        write_or_report(&mut writer, &[0.25; 100], &events_tx);
+
+        assert!(writer.is_none());
+        assert!(matches!(events_rx.try_recv(), Ok(SessionEvent::Error(_))));
+        assert!(
+            events_rx.try_recv().is_err(),
+            "error must be emitted only once"
+        );
+        let stored = state.lock().unwrap().1.len();
+        assert!(
+            stored >= header_len,
+            "the recoverable WAV header must be retained"
+        );
+        assert!(stored < header_len + 100 * std::mem::size_of::<f32>());
+    }
 
     /// Exercises the real default input device: opens it, captures for a few
     /// seconds, pauses, resumes, then stops - verifying at least one level

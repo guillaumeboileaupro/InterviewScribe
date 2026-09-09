@@ -153,7 +153,7 @@ et ne depend d'aucune donnee sensible.
 - [x] 4.1 Ajouter de petites fixtures WAV, MP3, M4A, FLAC, OGG et AAC autorisees.
 - [x] 4.2 Tester mono, stereo, frequences d'echantillonnage et durees extremes.
 - [x] 4.3 Tester fichiers tronques, vides, extension trompeuse et permission refusee.
-- [ ] 4.4 Simuler disque plein/ecriture et verifier la propagation sans perte.
+- [x] 4.4 Simuler disque plein/ecriture et verifier la propagation sans perte.
 - [ ] 4.5 Tester erreur d'un segment sans perte du reste de l'entretien.
 
 ## 5. Accessibilite et rendu reel
@@ -224,3 +224,4 @@ et ne depend d'aucune donnee sensible.
 | 2026-09-08 | 4.1 | Six fixtures synthetiques 440 Hz generees localement et testees par le decodeur reel ; aucune voix ni donnee privee. |
 | 2026-09-08 | 4.2 | Matrice WAV 8/16/44,1/48 kHz, mono/stereo et 10 ms a 60 s normalisee en mono 16 kHz. |
 | 2026-09-09 | 4.3 | Fichiers vide/tronque refuses, contenu WAV sous extension MP3 detecte et permission Unix refusee propagee. |
+| 2026-09-09 | 4.4 | Ecriture WAV incrementale rendue faillible ; ENOSPC simule, erreur emise une fois et prefixe recuperable conserve. |
