@@ -78,6 +78,12 @@ jobs:
           set -euo pipefail
           deb=$(find src-tauri/target/release/bundle/deb -name '*.deb' | head -n1)
           pkg=$(dpkg-deb -f "$deb" Package)
+          profile_root="$RUNNER_TEMP/interviewscribe-uninstall-profile"
+          app_data="$profile_root/com.guillaumeboileau.interviewscribe"
+          export_root="$RUNNER_TEMP/interviewscribe-external-export"
+          mkdir -p "$app_data" "$export_root"
+          echo 'synthetic private project' > "$app_data/preserve.sqlite3"
+          echo 'synthetic external export' > "$export_root/preserve.txt"
           sudo dpkg -i "$deb"
           dpkg -l "$pkg" | grep -q '^ii' || { echo "package $pkg is not reported as installed"; exit 1; }
           bin=$(dpkg -L "$pkg" | grep -E '^/usr/bin/' | head -n1)
@@ -87,7 +93,16 @@ jobs:
             echo "$pkg is still reported as installed after removal"
             exit 1
           fi
-          echo "install/uninstall verified for $pkg ($bin)"
+          [ "$(cat "$app_data/preserve.sqlite3")" = 'synthetic private project' ] || {
+            echo 'application data was removed or changed during uninstall'
+            exit 1
+          }
+          [ "$(cat "$export_root/preserve.txt")" = 'synthetic external export' ] || {
+            echo 'external export was removed or changed during uninstall'
+            exit 1
+          }
+          rm -rf -- "$profile_root" "$export_root"
+          echo "install/uninstall and user-data preservation verified for $pkg ($bin)"
 
       - name: Publish checksum (Debian package)
         if: matrix.platform == 'ubuntu-22.04'
@@ -111,6 +126,14 @@ jobs:
           # unquoted argument) so verification never has to guess where the
           # registry says the app landed.
           $installDir = "C:\InterviewScribeTest"
+          $profileRoot = Join-Path $env:RUNNER_TEMP "interviewscribe-uninstall-profile"
+          $appData = Join-Path $profileRoot "com.guillaumeboileau.interviewscribe"
+          $exportRoot = Join-Path $env:RUNNER_TEMP "interviewscribe-external-export"
+          New-Item -ItemType Directory -Force -Path $appData, $exportRoot | Out-Null
+          $projectSentinel = Join-Path $appData "preserve.sqlite3"
+          $exportSentinel = Join-Path $exportRoot "preserve.txt"
+          Set-Content -Path $projectSentinel -Value "synthetic private project" -NoNewline
+          Set-Content -Path $exportSentinel -Value "synthetic external export" -NoNewline
           Start-Process -FilePath $installer.FullName -ArgumentList "/S", "/D=$installDir" -Wait
 
           $appExe = Get-ChildItem -Path $installDir -Filter "*.exe" -Recurse |
@@ -123,7 +146,14 @@ jobs:
           Start-Process -FilePath $uninstaller.FullName -ArgumentList "/S" -Wait
           Start-Sleep -Seconds 3
           if (Test-Path $installDir) { throw "install directory still exists after uninstall: $installDir" }
-          Write-Host "Uninstall verified: $installDir removed"
+          if ((Get-Content -Raw $projectSentinel) -ne "synthetic private project") {
+            throw "application data was removed or changed during uninstall"
+          }
+          if ((Get-Content -Raw $exportSentinel) -ne "synthetic external export") {
+            throw "external export was removed or changed during uninstall"
+          }
+          Remove-Item -Recurse -Force $profileRoot, $exportRoot
+          Write-Host "Uninstall and user-data preservation verified: $installDir removed"
 
       - name: Install SQLite for Windows upgrade validation
         if: matrix.platform == 'windows-latest'

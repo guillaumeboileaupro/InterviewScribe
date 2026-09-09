@@ -242,6 +242,8 @@ et ne depend d'aucune donnee sensible.
   `.deb` et NSIS installes couverts en CI avec trafic sortant bloque et etat du
   modele verifie dans l'interface ; APK installee reste dependante de 7.6.
 - [ ] 7.5 Verifier desinstallation sans effacer les donnees utilisateur hors scope.
+  Sentinelles synthetiques du profil applicatif et d'un export externe ajoutees
+  aux jobs `.deb` et NSIS ; execution native du prochain tag requise avant validation.
 - [ ] 7.6 Tester l'APK sur emulateur arm64-v8a.
 - [ ] 7.7 `MATERIEL` Tester installation, import `content://` et transcription sur
   un appareil Android physique.
