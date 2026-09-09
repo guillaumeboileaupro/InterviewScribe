@@ -418,4 +418,78 @@ mod tests {
         assert!(android.latency_p95_ms > linux.latency_p95_ms);
         assert!(android.resident_memory_bytes < linux.resident_memory_bytes);
     }
+
+    #[test]
+    fn synthetic_one_hour_stream_stays_bounded_without_losing_samples() {
+        use crate::capture::{
+            chunker::{ChunkEvent, Chunker},
+            vad::{Vad, VadConfig},
+        };
+
+        const FRAME_MS: u32 = 20;
+        const SAMPLES_PER_FRAME: usize = 320;
+        const SESSION_MS: u64 = 60 * 60 * 1000;
+        const MAX_CHUNK_MS: u32 = 30_000;
+        const SILENCE_TO_CLOSE_MS: u32 = 800;
+
+        let started = Instant::now();
+        let speech_frame = [0.04_f32; SAMPLES_PER_FRAME];
+        let silence_frame = [0.0_f32; SAMPLES_PER_FRAME];
+        let mut vad = Vad::new(VadConfig::default());
+        let mut chunker = Chunker::new(MAX_CHUNK_MS, SILENCE_TO_CLOSE_MS);
+        let mut emitted_samples = 0_usize;
+        let mut peak_chunk_samples = 0_usize;
+        let mut chunk_count = 0_usize;
+
+        let frame_count = SESSION_MS as usize / FRAME_MS as usize;
+        for frame_index in 0..frame_count {
+            // Repeat four seconds of synthetic speech energy and two seconds
+            // of silence. No voice, transcript or identifying data is used.
+            let speech = frame_index % 300 < 200;
+            let frame = if speech {
+                &speech_frame[..]
+            } else {
+                &silence_frame[..]
+            };
+            let active = vad.process_frame(if speech { 0.04 } else { 0.0 }, FRAME_MS);
+            if let ChunkEvent::Ready(samples) = chunker.push_frame(frame, active, FRAME_MS) {
+                emitted_samples += samples.len();
+                peak_chunk_samples = peak_chunk_samples.max(samples.len());
+                chunk_count += 1;
+            }
+        }
+        if let ChunkEvent::Ready(samples) = chunker.flush() {
+            emitted_samples += samples.len();
+            peak_chunk_samples = peak_chunk_samples.max(samples.len());
+            chunk_count += 1;
+        }
+
+        let expected_samples = frame_count * SAMPLES_PER_FRAME;
+        assert_eq!(emitted_samples, expected_samples);
+        assert!(chunk_count >= 500, "expected regular bounded windows");
+        assert!(
+            peak_chunk_samples <= MAX_CHUNK_MS as usize * 16,
+            "no chunk may exceed the 30-second safety cap"
+        );
+
+        let synthetic_samples: Vec<_> = (1_u64..=60)
+            .map(|minute| PerformanceSample {
+                elapsed_ms: minute * 60_000,
+                latency_ms: Some(500 + minute * 10),
+                process_cpu_percent: Some(25.0),
+                resident_memory_bytes: Some(512 * 1024 * 1024),
+                disk_bytes: 44 + minute * 60 * 16_000 * 4,
+                battery_percent: None,
+                temperature_celsius: None,
+            })
+            .collect();
+        let summary = PerformanceSummary::from_samples(&synthetic_samples);
+        assert!(summary.evaluate(PerformancePlatform::Linux.budget()).passed);
+        assert_eq!(summary.peak_disk_bytes, 230_400_044);
+
+        println!(
+            "synthetic soak: duration_ms={SESSION_MS}, chunks={chunk_count}, peak_chunk_samples={peak_chunk_samples}, wall_ms={}",
+            millis(started.elapsed())
+        );
+    }
 }

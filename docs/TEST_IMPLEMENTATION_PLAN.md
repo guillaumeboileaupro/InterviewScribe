@@ -224,7 +224,7 @@ et ne depend d'aucune donnee sensible.
 - [x] 6.1 Ajouter un collecteur sans contenu sensible : latence, CPU, memoire,
   batterie, temperature et volume disque.
 - [x] 6.2 Definir seuils p50/p95 et budget memoire par plateforme.
-- [ ] 6.3 Executer une session synthetique longue sans microphone.
+- [x] 6.3 Executer une session synthetique longue sans microphone.
 - [ ] 6.4 `MATERIEL` Executer une session parlee d'une heure sous Linux et Windows.
 - [ ] 6.5 `MATERIEL` Tester changement et disparition du microphone.
 - [ ] 6.6 `MATERIEL` Mesurer batterie/temperature et cycle de vie Android.
@@ -288,3 +288,4 @@ et ne depend d'aucune donnee sensible.
 | 2026-09-09 | 5.6 (partiel) | Semantique lecteur d'ecran automatisee ; validation vocale NVDA Windows et TalkBack Android reste MATERIEL. |
 | 2026-09-09 | 6.1 | Collecteur agrege ajoute : latence, CPU/RSS Linux, taille fichier, batterie/temperature si exposees ; aucune donnee source serialisee. |
 | 2026-09-09 | 6.2 | Budgets Linux/Windows/Android et verdicts p50/p95/RSS implementes ; metriques absentes explicitement refusees. |
+| 2026-09-09 | 6.3 | Une heure synthetique executee en trames de 20 ms : 601 fenetres, pic 96 000 echantillons, aucune perte sur 57,6 M, 36 ms mur, 230 400 044 octets projetes. |

@@ -80,7 +80,7 @@ de `cargo test` normal et leur execution doit etre rapportee separement.
 | AUD-02 | Silence, bruit et audio corrompu echouent proprement | Unit + integration | Toutes | Automatise partiel | VAD synthetique couvert; matrice de formats et erreurs a completer. |
 | CAP-01 | Capture, pause, reprise et WAV recuperable | Integration + materiel | Desktop | Valide Linux partiel | Test microphone Linux opt-in execute; Windows et changement de peripherique restent a valider. |
 | CAP-02 | Aucune perte apres interruption | Integration + E2E | Toutes | Automatise partiel | WAV et reouverture SQLite avec segments partiels couverts; la reprise applicative d'un statut `transcribing` reste a implementer. |
-| CAP-03 | Session d'une heure stable | Soak test | Desktop | Automatise partiel | Collecteur agrege disponible pour latence, CPU/RSS et volume disque sous Linux; seuils et session longue restent a executer. |
+| CAP-03 | Session d'une heure stable | Soak test | Desktop | Automatise partiel | Une heure synthetique VAD/fenetrage passee sans perte (601 fenetres, pic 96 000 echantillons); collecteur et budgets disponibles. Session murale avec modele et microphone reste materielle. |
 | TRN-01 | Whisper local produit texte et horodatages | Integration modele | Desktop | Valide Linux | `whisper_smoke` opt-in avec modele et audio publics. Windows reste a qualifier. |
 | TRN-02 | Aucun doublon aux frontieres de fenetres | Unit + integration | Toutes | Automatise partiel | Chunker couvert; ajouter oracle texte sur chevauchements successifs. |
 | EXP-01 | TXT, MD, JSON, SRT, VTT, DOCX et PDF restent lisibles | Unit + integration | Desktop | Automatise | Tests Rust; conserver validation structurelle et texte extrait. |
