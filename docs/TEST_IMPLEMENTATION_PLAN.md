@@ -346,3 +346,42 @@ avertissement et 169 tests Rust reussis. Neuf tests materiels/lourds restent
 explicitement ignores. `clippy --all-targets --features wdio-e2e` est vert ; le
 second passage des tests avec cette feature a ete interrompu par manque d'espace
 puis verrou Cargo concurrent, sans erreur de code observee.
+
+## 9. Echec reel du build de release v0.1.3 — A INVESTIGUER (Codex, auteur des scripts concernes)
+
+Tag `v0.1.3` deja pousse (par Codex), run `release.yml` 34396034498 termine en
+**echec reel**, `release-gate` a correctement bloque - **aucune release GitHub
+n'a ete publiee**, ne pas la debloquer/publier avant correction. Deux
+problemes independants trouves par lecture directe des logs (`gh api
+repos/.../actions/jobs/<id>/logs`) :
+
+1. **`scripts/test-upgrade-linux.sh` (verification N-1) echoue silencieusement**
+   sur les deux jobs desktop (`ubuntu-22.04` et `windows-latest`, ce dernier
+   via WSL/environnement equivalent). Le script installe v0.1.2, seed
+   `tests/fixtures/db/schema-v0.sql`, installe v0.1.3 par-dessus, lance le
+   binaire 20s sous `xvfb-run`, puis verifie schema/donnees via une serie de
+   `[[ ... ]]` nus sous `set -e` - **aucune de ces assertions n'a de message
+   d'erreur propre**, donc le log ne montre que `Process completed with exit
+   code 1` sans jamais indiquer LAQUELLE des assertions a echoue (version de
+   schema ? colonne `notes` ? colonne `reverted_at` ? nombre de lignes par
+   table ? `raw_text` inchange ?). Le message `echo "Le lancement de la
+   version N a echoue"` du script n'apparait PAS dans le log, ce qui exclut un
+   crash direct du binaire au lancement - la panne est dans les assertions
+   post-lancement. Recommandation : ajouter un message explicite a chaque
+   `[[ ]]` (ou les remplacer par des `if ... else echo ... exit 1; fi`) pour
+   localiser exactement laquelle echoue avant de corriger quoi que ce soit.
+   Cote migration SQLite elle-meme (`src-tauri/src/db/schema.rs`), le code
+   parait correct par lecture (verifie ce jour : `ensure_column` pour `notes`
+   et `reverted_at` tourne inconditionnellement, `user_version` est mis a 1 si
+   `< SCHEMA_VERSION`) - donc soit un decalage timing/environnement CI, soit
+   un detail du fixture `schema-v0.sql` non aligne avec le schema reel actuel.
+2. **Job `android-emulator` : configuration cassee**, independante du point 1.
+   Log : `Warning: Failed to find package 'emulator'` puis
+   `undefined/platform-tools/adb: 1: Syntax error` (`undefined` dans le chemin
+   suggere une variable d'environnement type `$ANDROID_HOME`/`$ANDROID_SDK_ROOT`
+   non definie au moment ou l'action construit le chemin vers `adb`). A
+   corriger dans le workflow (etape d'installation du SDK/emulator Android
+   avant l'etape qui utilise `adb`).
+
+Le job `android` (build de l'APK, distinct de `android-emulator`) a lui
+reussi - seule la verification emulateur est en cause, pas le build.
