@@ -284,6 +284,16 @@ directement (croix / kill), sans cliquer "Arreter".
 
 ## 9. Android spécifique
 
+Avant AND-01, activer les options développeur et relever uniquement les données
+non sensibles suivantes (ne pas copier le numéro de série, l'IMEI ou le compte
+Google) :
+
+- modèle commercial du téléphone :
+- version Android / niveau API :
+- ABI indiquée par `adb shell getprop ro.product.cpu.abi` (attendu : `arm64-v8a`) :
+- nom et SHA-256 de l'APK testée :
+- batterie au début du test :
+
 ### AND-01 - Installation
 
 **Étapes** : installer l'APK (source inconnue autorisée).
@@ -291,6 +301,9 @@ directement (croix / kill), sans cliquer "Arreter".
 - [ ] Comme attendu : l'installation se termine sans avertissement autre que celui, normal, de "source inconnue".
 - [ ] L'installation échoue (message ?).
 - [ ] Autre (décrire) :
+
+Conserver comme preuves une capture de l'écran d'accueil et la sortie de
+`adb shell dumpsys package com.guillaumeboileau.interviewscribe | grep versionName`.
 
 ### AND-02 - Permission microphone
 
@@ -307,6 +320,38 @@ directement (croix / kill), sans cliquer "Arreter".
 
 - [ ] Comme attendu : un seul locuteur unique est créé pour tout le texte (limitation connue et documentée, pas un bug).
 - [ ] Autre comportement observé (décrire) :
+
+### AND-04 - Import `content://` et transcription hors connexion
+
+**Préparation** : copier un court fichier audio de test non privé dans
+Téléchargements. Activer le mode avion, puis vérifier que Wi-Fi et données
+mobiles sont désactivés.
+
+**Étapes** : dans InterviewScribe, choisir "+ Nouvel entretien" > "Importer un
+fichier audio", sélectionner le fichier via le sélecteur système Android, puis
+attendre la fin de la transcription.
+
+- [ ] Comme attendu : le sélecteur revient dans l'application, l'import aboutit et une transcription non vide est produite sans réseau.
+- [ ] Le sélecteur renvoie dans l'application mais l'URI `content://` est refusée ou illisible.
+- [ ] L'import aboutit mais la transcription échoue (message à recopier sans contenu privé).
+- [ ] Une connexion réseau semble nécessaire ou le mode avion empêche le traitement.
+- [ ] Autre (décrire) :
+
+Conserver une capture du résultat avec uniquement le corpus public et noter la
+durée audio ainsi que la durée de traitement observée.
+
+### AND-05 - Persistance après redémarrage
+
+**Étapes** : fermer complètement InterviewScribe depuis les applications
+récentes, la relancer et rouvrir l'entretien créé par AND-04.
+
+- [ ] Comme attendu : l'entretien, sa transcription et ses horodatages sont présents et l'audio reste lisible.
+- [ ] L'entretien ou une partie de ses données a disparu.
+- [ ] L'application plante ou reste bloquée au redémarrage.
+- [ ] Autre (décrire) :
+
+À la fin, noter la batterie restante et confirmer que les captures et journaux
+ne contiennent ni entretien réel, ni identifiant de téléphone, ni jeton.
 
 ---
 

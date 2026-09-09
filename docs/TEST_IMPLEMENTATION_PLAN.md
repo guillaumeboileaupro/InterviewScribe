@@ -249,6 +249,8 @@ et ne depend d'aucune donnee sensible.
   desinstallation controles ; execution native du prochain tag requise.
 - [ ] 7.7 `MATERIEL` Tester installation, import `content://` et transcription sur
   un appareil Android physique.
+  Protocole AND-01 a AND-05 complete avec ABI, mode avion, preuves non sensibles
+  et persistance ; execution sur appareil physique encore requise.
 
 ## 8. Organisation CI finale
 
