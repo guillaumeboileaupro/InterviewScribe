@@ -158,7 +158,7 @@ et ne depend d'aucune donnee sensible.
 
 ## 5. Accessibilite et rendu reel
 
-- [ ] 5.1 Etendre Axe aux etats chargement, pause, termine et reglages.
+- [x] 5.1 Etendre Axe aux etats chargement, pause, termine et reglages.
 - [ ] 5.2 Tester l'ordre de tabulation et le retour du focus apres dialogue.
 - [ ] 5.3 Tester les raccourcis clavier documentes.
 - [ ] 5.4 `MATERIEL` Auditer contraste et lisibilite en clair/sombre/systeme.
@@ -226,3 +226,4 @@ et ne depend d'aucune donnee sensible.
 | 2026-09-09 | 4.3 | Fichiers vide/tronque refuses, contenu WAV sous extension MP3 detecte et permission Unix refusee propagee. |
 | 2026-09-09 | 4.4 | Ecriture WAV incrementale rendue faillible ; ENOSPC simule, erreur emise une fois et prefixe recuperable conserve. |
 | 2026-09-09 | 4.5 | Echec du bloc median injecte : blocs precedent/suivant conserves, offset suivant maintenu et audio source intact. |
+| 2026-09-09 | 5.1 | Axe etendu aux reglages en chargement/remplis, capture en pause et entretien termine. |

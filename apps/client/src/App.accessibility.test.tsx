@@ -104,6 +104,118 @@ describe("automated accessibility", () => {
     await expectNoAutomatedViolations(container);
   });
 
+  it("finds no detectable violation while a settings resource is loading", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten" || cmd === "client_log") return null;
+      if (cmd === "list_interviews") return [];
+      if (cmd === "ensure_whisper_model" || cmd === "read_recent_logs")
+        return new Promise(() => {});
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+
+    const { container } = render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Réglages" }));
+    await screen.findByText("Vérification du modèle intégré…");
+
+    await expectNoAutomatedViolations(container);
+  });
+
+  it("finds no detectable violation in populated settings", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten" || cmd === "client_log") return null;
+      if (cmd === "list_interviews") return [];
+      if (cmd === "ensure_whisper_model")
+        return {
+          state: "Ready",
+          name: "Whisper test local",
+          size_mb: 42,
+          path: "/models/test.bin",
+        };
+      if (cmd === "read_recent_logs") return "Journal technique synthétique";
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+
+    const { container } = render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Réglages" }));
+    await screen.findByText("Whisper test local");
+
+    await expectNoAutomatedViolations(container);
+  });
+
+  it("finds no detectable violation while recording is paused", async () => {
+    mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten" || cmd === "client_log") return null;
+      if (cmd === "list_interviews") return [];
+      if (cmd === "list_input_devices") return ["Microphone de test"];
+      if (cmd === "start_recording")
+        return {
+          id: 11,
+          title: "Session en pause",
+          language: null,
+          mode: "realtime",
+          audio_path: "/audio/11.wav",
+          status: "transcribing",
+          error_message: null,
+          created_at: "0",
+          updated_at: "0",
+        };
+      if (cmd === "pause_recording") return null;
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+
+    const { container } = render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /Nouvel entretien/ }));
+    await screen.findByRole("option", { name: "Microphone de test" });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Demarrer l’enregistrement" }),
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Pause" }));
+    await screen.findByRole("status", { name: "Enregistrement en pause" });
+
+    await expectNoAutomatedViolations(container);
+  });
+
+  it("finds no detectable violation after recording is finished", async () => {
+    const interview = {
+      id: 12,
+      title: "Session terminée",
+      language: null,
+      mode: "realtime",
+      audio_path: "/audio/12.wav",
+      status: "transcribed",
+      error_message: null,
+      created_at: "0",
+      updated_at: "0",
+    } as const;
+    mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten" || cmd === "client_log") return null;
+      if (cmd === "list_interviews") return [];
+      if (cmd === "list_input_devices") return [];
+      if (cmd === "start_recording")
+        return { ...interview, status: "transcribing" };
+      if (cmd === "stop_recording")
+        return { interview, speakers: [], segments: [] };
+      if (cmd === "check_doc_export_available") return false;
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+
+    const { container } = render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: /Nouvel entretien/ }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Demarrer l’enregistrement" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Arreter et terminer" }),
+    );
+    await screen.findByRole("heading", { level: 1, name: "Session terminée" });
+
+    await expectNoAutomatedViolations(container);
+  });
+
   it("finds no detectable violation in a long interview error state", async () => {
     const interview = {
       id: 10,
