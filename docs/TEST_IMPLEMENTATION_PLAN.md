@@ -165,6 +165,8 @@ et ne depend d'aucune donnee sensible.
   Ratios des jetons et couleurs d'action automatises (minimum 4,5:1) ; audit
   visuel sur ecran reel encore requis.
 - [ ] 5.5 `MATERIEL` Verifier les largeurs 360 px, tablette et bureau avec long texte.
+  Rendu Chromium inspecte a 360/768/1440 px et protections de repli testees ;
+  validation sur appareils physiques encore requise.
 - [ ] 5.6 `MATERIEL` Tester lecteur d'ecran sur Windows et Android.
 
 ## 6. Performance et endurance
@@ -232,3 +234,4 @@ et ne depend d'aucune donnee sensible.
 | 2026-09-09 | 5.2 | Dialogue de suppression borne au clavier ; ordre annuler/confirmer et retour au declencheur testes. |
 | 2026-09-09 | 5.3 | Portee clavier documentee : navigation native, boucle modale et Echap testes ; aucun raccourci global reserve. |
 | 2026-09-09 | 5.4 (partiel) | Contraste des themes clair/sombre/systeme verrouille a 4,5:1 ; lisibilite sur ecran reel reste MATERIEL. |
+| 2026-09-09 | 5.5 (partiel) | Rendus Chromium 360/768/1440 inspectes ; texte long et protections anti-debordement testes, appareils reels restants. |

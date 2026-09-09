@@ -88,3 +88,26 @@ describe("theme contrast", () => {
     );
   });
 });
+
+describe("responsive safeguards", () => {
+  it("defines phone, tablet, desktop and wide-screen breakpoints", () => {
+    expect(stylesheet).toContain("@media (max-width: 560px)");
+    expect(stylesheet).toContain("@media (max-width: 800px)");
+    expect(stylesheet).toContain("@media (max-width: 1100px)");
+    expect(stylesheet).toContain("@media (min-width: 1600px)");
+  });
+
+  it("allows flexible content to shrink and long text to wrap", () => {
+    expect(cssBlock(".workspace")).toMatch(/min-width:\s*0/);
+    expect(cssBlock(".interviewRow > div")).toMatch(/min-width:\s*0/);
+    expect(cssBlock(".interviewRow .textButton")).toMatch(
+      /overflow-wrap:\s*anywhere/,
+    );
+    expect(cssBlock(".diagnosticsLog")).toMatch(/word-break:\s*break-word/);
+  });
+
+  it("keeps native interactive targets at least 44 pixels high", () => {
+    expect(cssBlock("button,\nselect")).toMatch(/min-height:\s*44px/);
+    expect(cssBlock(".dangerTextButton")).toMatch(/min-width:\s*44px/);
+  });
+});

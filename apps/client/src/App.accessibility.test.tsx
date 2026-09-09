@@ -219,7 +219,8 @@ describe("automated accessibility", () => {
   it("finds no detectable violation in a long interview error state", async () => {
     const interview = {
       id: 10,
-      title: "Entretien long",
+      title:
+        "Entretien avec un titre volontairement tres long pour verifier la lisibilite responsive",
       language: "fr",
       mode: "posteriori",
       audio_path: "/audio/10.wav",
@@ -252,7 +253,7 @@ describe("automated accessibility", () => {
             start_ms: index * 2_000,
             end_ms: index * 2_000 + 1_500,
             raw_text: `Segment public synthetique ${index + 1}`,
-            current_text: `Segment public synthetique ${index + 1}`,
+            current_text: `Segment public synthetique ${index + 1} ${"mot-sans-espace-".repeat(12)}`,
             confidence: 0.9,
             status: "raw",
           })),
@@ -263,10 +264,13 @@ describe("automated accessibility", () => {
     const { container } = render(<App />);
     fireEvent.click(
       await screen.findByRole("button", {
-        name: "Entretien long — error",
+        name: /Entretien avec un titre volontairement tres long.*— error/,
       }),
     );
-    await screen.findByRole("heading", { level: 1, name: "Entretien long" });
+    await screen.findByRole("heading", {
+      level: 1,
+      name: /Entretien avec un titre volontairement tres long/,
+    });
     await screen.findByText(/Le traitement local a ete interrompu/);
 
     await expectNoAutomatedViolations(container);
