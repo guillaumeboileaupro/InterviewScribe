@@ -31,6 +31,17 @@ L'application doit evoquer un outil editorial professionnel: calme, precis, lisi
 - Cibles tactiles d'au moins 44 par 44 pixels sur mobile.
 - Ne pas utiliser la couleur comme seul indicateur.
 
+### Navigation clavier sur bureau
+
+- `Tab` et `Maj+Tab` parcourent les controles dans l'ordre visuel. Dans une
+  confirmation modale, le focus reste borne aux actions du dialogue.
+- `Entree` et `Espace` activent les boutons et controles natifs lorsqu'ils ont
+  le focus.
+- `Echap` ferme la confirmation de suppression sans supprimer l'entretien et
+  rend le focus au bouton qui l'a ouverte.
+- Aucun raccourci global avec lettre ou modificateur n'est reserve pour le
+  moment, afin de ne pas intercepter la saisie ou les raccourcis du systeme.
+
 
 ## Interface du prototype
 

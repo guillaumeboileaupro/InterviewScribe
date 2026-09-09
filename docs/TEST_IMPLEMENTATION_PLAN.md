@@ -160,7 +160,7 @@ et ne depend d'aucune donnee sensible.
 
 - [x] 5.1 Etendre Axe aux etats chargement, pause, termine et reglages.
 - [x] 5.2 Tester l'ordre de tabulation et le retour du focus apres dialogue.
-- [ ] 5.3 Tester les raccourcis clavier documentes.
+- [x] 5.3 Tester les raccourcis clavier documentes.
 - [ ] 5.4 `MATERIEL` Auditer contraste et lisibilite en clair/sombre/systeme.
 - [ ] 5.5 `MATERIEL` Verifier les largeurs 360 px, tablette et bureau avec long texte.
 - [ ] 5.6 `MATERIEL` Tester lecteur d'ecran sur Windows et Android.
@@ -228,3 +228,4 @@ et ne depend d'aucune donnee sensible.
 | 2026-09-09 | 4.5 | Echec du bloc median injecte : blocs precedent/suivant conserves, offset suivant maintenu et audio source intact. |
 | 2026-09-09 | 5.1 | Axe etendu aux reglages en chargement/remplis, capture en pause et entretien termine. |
 | 2026-09-09 | 5.2 | Dialogue de suppression borne au clavier ; ordre annuler/confirmer et retour au declencheur testes. |
+| 2026-09-09 | 5.3 | Portee clavier documentee : navigation native, boucle modale et Echap testes ; aucun raccourci global reserve. |
