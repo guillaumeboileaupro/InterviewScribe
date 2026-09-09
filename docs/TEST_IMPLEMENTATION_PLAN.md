@@ -326,6 +326,7 @@ et ne depend d'aucune donnee sensible.
 | 2026-09-09 | 8.6 | Gate de release exigeant les preuves Linux, Windows et Android automatisees ajoute et teste. |
 | 2026-09-09 | 9.1-9.6 | Progression Whisper, notes, lecteur audio, correlation temporelle, correctif console Windows, migrations et tests termines. |
 | 2026-09-09 | 9.7 (partiel) | Validation automatisee verte ; inspection des applications installees et Android encore requise. |
+| 2026-09-09 | Release v0.1.3 | Versions application/Tauri/Cargo alignees ; tag destine a lancer les builds natifs et les preuves 7.2 a 7.6. |
 
 ## 9. Retours utilisateurs — lecteur, notes et progression
 
