@@ -1,0 +1,79 @@
+name: Manual hardware qualification report
+
+on:
+  workflow_dispatch:
+    inputs:
+      protocol:
+        description: Qualification protocol executed outside CI
+        required: true
+        type: choice
+        options:
+          - android-and-01-05
+          - desktop-one-hour-session
+          - desktop-microphone-switch
+          - android-battery-lifecycle
+          - windows-nvda
+          - android-talkback
+      platform:
+        description: Target platform
+        required: true
+        type: choice
+        options:
+          - android-arm64-v8a
+          - linux-x86_64
+          - windows-x86_64
+      result:
+        description: Observed result
+        required: true
+        type: choice
+        options:
+          - passed
+          - failed
+          - blocked
+      app_version:
+        description: Tested application version or commit (no device identifier)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate report metadata
+        env:
+          APP_VERSION: ${{ inputs.app_version }}
+        run: |
+          if [[ ! "$APP_VERSION" =~ ^[A-Za-z0-9._+-]{1,64}$ ]]; then
+            echo 'app_version must contain only a version or commit identifier'
+            exit 1
+          fi
+      - name: Create privacy-safe qualification report
+        env:
+          PROTOCOL: ${{ inputs.protocol }}
+          PLATFORM: ${{ inputs.platform }}
+          RESULT: ${{ inputs.result }}
+          APP_VERSION: ${{ inputs.app_version }}
+          COMMIT_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          jq --null-input \
+            --arg schema_version '1' \
+            --arg protocol "$PROTOCOL" \
+            --arg platform "$PLATFORM" \
+            --arg result "$RESULT" \
+            --arg app_version "$APP_VERSION" \
+            --arg commit_sha "$COMMIT_SHA" \
+            --arg run_id "$RUN_ID" \
+            '{schema_version: ($schema_version | tonumber), protocol: $protocol, platform: $platform, result: $result, app_version: $app_version, commit_sha: $commit_sha, run_id: $run_id, contains_private_data: false}' \
+            > manual-qualification-report.json
+          jq . manual-qualification-report.json >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: manual-qualification-${{ inputs.protocol }}-${{ inputs.platform }}
+          path: manual-qualification-report.json
+          if-no-files-found: error
+          retention-days: 90

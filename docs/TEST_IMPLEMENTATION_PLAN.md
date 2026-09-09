@@ -261,7 +261,9 @@ et ne depend d'aucune donnee sensible.
 - [x] 8.3 Ajouter workflow nocturne pour corpus et performance.
   Planification quotidienne et declenchement manuel ajoutes : corpus public
   epingle, WER/CER/DER, soak synthetique et artefacts agreges sans audio.
-- [ ] 8.4 Ajouter workflow manuel pour tests modele/materiel avec compte rendu.
+- [x] 8.4 Ajouter workflow manuel pour tests modele/materiel avec compte rendu.
+  Qualification modele declenchable dans le workflow nocturne ; attestation
+  materielle a choix fermes et rapport JSON sans contenu libre ajoutee.
 - [ ] 8.5 Publier rapports WER/CER/DER, performance et packaging sans donnees brutes.
 - [ ] 8.6 Bloquer une release si une preuve obligatoire manque, sans bloquer sur
   une validation explicitement classee `MATERIEL` hors environnement.

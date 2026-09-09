@@ -136,6 +136,11 @@ et consenti. Le rapport conserve seulement mesures et resultat, jamais l'audio.
 | Tag de version | Construction native, installation, lancement, mise a niveau, desinstallation, signature et sommes de controle. |
 | Qualification Android | Emulateur puis appareil arm64-v8a physique, avec rapport distinct. |
 
+Les validations materielles sont consignees via
+`Manual hardware qualification report`, selon `MANUAL_QUALIFICATION.md`. Le
+rapport ne contient que protocole, plateforme, resultat, version et identifiants
+techniques du run ; aucune observation libre ni donnee utilisateur.
+
 ## Backlog d'implementation
 
 L'ordre d'execution detaille, les cases et le journal de preuves sont maintenus
