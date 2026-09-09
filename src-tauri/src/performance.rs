@@ -15,6 +15,132 @@ pub struct PerformanceSample {
     pub temperature_celsius: Option<f64>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub enum PerformancePlatform {
+    Linux,
+    Windows,
+    Android,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct PerformanceBudget {
+    pub latency_p50_ms: u64,
+    pub latency_p95_ms: u64,
+    pub resident_memory_bytes: u64,
+}
+
+impl PerformancePlatform {
+    pub const fn budget(self) -> PerformanceBudget {
+        match self {
+            Self::Linux | Self::Windows => PerformanceBudget {
+                latency_p50_ms: 10_000,
+                latency_p95_ms: 30_000,
+                resident_memory_bytes: 4 * 1024 * 1024 * 1024,
+            },
+            Self::Android => PerformanceBudget {
+                latency_p50_ms: 20_000,
+                latency_p95_ms: 60_000,
+                resident_memory_bytes: 3 * 1024 * 1024 * 1024,
+            },
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct PerformanceSummary {
+    pub sample_count: usize,
+    pub latency_sample_count: usize,
+    pub memory_sample_count: usize,
+    pub latency_p50_ms: Option<u64>,
+    pub latency_p95_ms: Option<u64>,
+    pub peak_resident_memory_bytes: Option<u64>,
+    pub peak_disk_bytes: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub enum BudgetViolation {
+    MissingLatency,
+    MissingMemory,
+    LatencyP50,
+    LatencyP95,
+    ResidentMemory,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct BudgetVerdict {
+    pub passed: bool,
+    pub violations: Vec<BudgetViolation>,
+}
+
+impl PerformanceSummary {
+    pub fn from_samples(samples: &[PerformanceSample]) -> Self {
+        let mut latencies: Vec<u64> = samples
+            .iter()
+            .filter_map(|sample| sample.latency_ms)
+            .collect();
+        latencies.sort_unstable();
+        let memory_sample_count = samples
+            .iter()
+            .filter(|sample| sample.resident_memory_bytes.is_some())
+            .count();
+        Self {
+            sample_count: samples.len(),
+            latency_sample_count: latencies.len(),
+            memory_sample_count,
+            latency_p50_ms: percentile(&latencies, 50),
+            latency_p95_ms: percentile(&latencies, 95),
+            peak_resident_memory_bytes: samples
+                .iter()
+                .filter_map(|sample| sample.resident_memory_bytes)
+                .max(),
+            peak_disk_bytes: samples
+                .iter()
+                .map(|sample| sample.disk_bytes)
+                .max()
+                .unwrap_or(0),
+        }
+    }
+
+    pub fn evaluate(&self, budget: PerformanceBudget) -> BudgetVerdict {
+        let mut violations = Vec::new();
+        match self.latency_p50_ms {
+            Some(value) if value > budget.latency_p50_ms => {
+                violations.push(BudgetViolation::LatencyP50)
+            }
+            None => violations.push(BudgetViolation::MissingLatency),
+            _ => {}
+        }
+        if self
+            .latency_p95_ms
+            .is_some_and(|value| value > budget.latency_p95_ms)
+        {
+            violations.push(BudgetViolation::LatencyP95);
+        }
+        match self.peak_resident_memory_bytes {
+            Some(value) if value > budget.resident_memory_bytes => {
+                violations.push(BudgetViolation::ResidentMemory)
+            }
+            None => violations.push(BudgetViolation::MissingMemory),
+            _ => {}
+        }
+        BudgetVerdict {
+            passed: violations.is_empty(),
+            violations,
+        }
+    }
+}
+
+fn percentile(sorted_values: &[u64], percentile: usize) -> Option<u64> {
+    if sorted_values.is_empty() {
+        return None;
+    }
+    let rank = percentile
+        .saturating_mul(sorted_values.len())
+        .div_ceil(100)
+        .max(1);
+    sorted_values.get(rank - 1).copied()
+}
+
 #[derive(Debug)]
 pub struct PerformanceCollector {
     started: Instant,
@@ -220,5 +346,76 @@ mod tests {
             .unwrap()
             .contains("private-name"));
         std::fs::remove_file(path).ok();
+    }
+
+    fn metric_sample(latency_ms: Option<u64>, memory_bytes: Option<u64>) -> PerformanceSample {
+        PerformanceSample {
+            elapsed_ms: 0,
+            latency_ms,
+            process_cpu_percent: None,
+            resident_memory_bytes: memory_bytes,
+            disk_bytes: 64,
+            battery_percent: None,
+            temperature_celsius: None,
+        }
+    }
+
+    #[test]
+    fn computes_nearest_rank_p50_p95_and_peaks() {
+        let samples: Vec<_> = (1..=20)
+            .map(|value| metric_sample(Some(value * 100), Some(value * 1024)))
+            .collect();
+        let summary = PerformanceSummary::from_samples(&samples);
+
+        assert_eq!(summary.sample_count, 20);
+        assert_eq!(summary.latency_p50_ms, Some(1_000));
+        assert_eq!(summary.latency_p95_ms, Some(1_900));
+        assert_eq!(summary.peak_resident_memory_bytes, Some(20 * 1024));
+        assert_eq!(summary.peak_disk_bytes, 64);
+    }
+
+    #[test]
+    fn budget_requires_metrics_instead_of_passing_missing_values() {
+        let verdict =
+            PerformanceSummary::from_samples(&[]).evaluate(PerformancePlatform::Linux.budget());
+        assert!(!verdict.passed);
+        assert_eq!(
+            verdict.violations,
+            vec![
+                BudgetViolation::MissingLatency,
+                BudgetViolation::MissingMemory
+            ]
+        );
+    }
+
+    #[test]
+    fn budget_reports_each_exceeded_limit() {
+        let budget = PerformancePlatform::Linux.budget();
+        let summary = PerformanceSummary::from_samples(&[
+            metric_sample(Some(31_000), Some(budget.resident_memory_bytes + 1)),
+            metric_sample(Some(11_000), Some(1024)),
+        ]);
+        let verdict = summary.evaluate(budget);
+
+        assert!(!verdict.passed);
+        assert_eq!(
+            verdict.violations,
+            vec![
+                BudgetViolation::LatencyP50,
+                BudgetViolation::LatencyP95,
+                BudgetViolation::ResidentMemory
+            ]
+        );
+    }
+
+    #[test]
+    fn platform_budgets_are_explicit_and_android_is_more_constrained() {
+        let linux = PerformancePlatform::Linux.budget();
+        let windows = PerformancePlatform::Windows.budget();
+        let android = PerformancePlatform::Android.budget();
+
+        assert_eq!(linux, windows);
+        assert!(android.latency_p95_ms > linux.latency_p95_ms);
+        assert!(android.resident_memory_bytes < linux.resident_memory_bytes);
     }
 }

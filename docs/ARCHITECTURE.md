@@ -181,6 +181,19 @@ identifiant sont exclus du format serialise. Les seuils et rapports agreges
 sont definis separement afin que le collecteur ne decide jamais seul qu'une
 plateforme est validee.
 
+Budgets initiaux de non-regression (a recalibrer uniquement a partir de
+mesures publiees):
+
+| Plateforme | Latence p50 | Latence p95 | Pic memoire residente |
+| --- | ---: | ---: | ---: |
+| Linux | 10 s | 30 s | 4 Gio |
+| Windows | 10 s | 30 s | 4 Gio |
+| Android | 20 s | 60 s | 3 Gio |
+
+Le percentile utilise la methode du rang le plus proche. Une campagne sans
+mesure de latence ou de memoire echoue comme incomplete ; une valeur absente
+n'est jamais assimilee a zero.
+
 
 ## Modele fourni avec l’application
 
