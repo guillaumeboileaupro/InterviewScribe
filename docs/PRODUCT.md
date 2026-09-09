@@ -21,6 +21,7 @@ La retranscription manuelle d'un entretien est lente. Les solutions existantes e
 6. Basculer entre texte brut et texte nettoye.
 7. Afficher ou masquer les horodatages.
 8. Corriger puis exporter.
+9. Reecouter un passage depuis son horodatage et ajouter un commentaire prive.
 
 ## Exigences fonctionnelles
 
@@ -37,6 +38,13 @@ La retranscription manuelle d'un entretien est lente. Les solutions existantes e
 - Mode temps reel avec texte provisoire puis consolidation.
 - Mode a posteriori plus precis.
 - Horodatages par segment, conserves meme lorsqu'ils sont masques.
+- Progression 0-100 issue du moteur Whisper pendant une transcription a posteriori.
+- Reecoute locale de l'audio et navigation directe depuis un horodatage.
+
+### Notes d'entretien
+
+- Commentaire optionnel persistant, distinct de la transcription et du titre.
+- Une note vide efface le commentaire sans modifier le texte brut ni les editions.
 
 ### Intervenants
 
@@ -77,4 +85,3 @@ La retranscription manuelle d'un entretien est lente. Les solutions existantes e
 - Synchronisation cloud.
 - Traduction automatique complete.
 - Enregistrement discret ou sans consentement.
-

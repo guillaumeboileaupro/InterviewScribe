@@ -58,10 +58,14 @@ La preparation permet d’importer un fichier et de le transcrire avec Whisper l
 Le modele Large v3 Turbo est fourni avec l’application. Les reglages affichent
 son nom et son etat, sans bouton de telechargement. Un paquet incomplet affiche
 une erreur demandant de reinstaller la version complete.
-La capture microphone reste indisponible.
+La capture microphone propose demarrage, pause, reprise et arret. La page de
+detail conserve le transcript comme contenu principal et ajoute un lecteur
+audio compact ainsi qu'un commentaire optionnel. Les horodatages sont des
+boutons clavier qui lancent la lecture au debut du segment; le segment actif est
+signale par un fond discret en plus de la position visible du lecteur.
 
-Prochaines etapes : ajouter une progression detaillee, l’edition reversible et
-la capture microphone. L’export natif propose deja TXT, Markdown et JSON.
-Les etats de chargement, d’erreur de traitement, d’enregistrement et les longs
-entretiens restent a implementer avec ces fonctions. Une validation visuelle
-sur navigateur et sur les plateformes cibles reste necessaire.
+La transcription a posteriori affiche une progression native 0-100 pendant le
+traitement. L'edition reversible, les intervenants et les exports TXT, Markdown,
+JSON, SRT, VTT, DOCX et PDF sont disponibles. Une validation visuelle du lecteur,
+de la progression et de la correlation segment/audio reste necessaire sur les
+applications installees et sur Android.

@@ -20,8 +20,11 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' data:; style-src 'self' 'unsafe-inline'",
-      "capabilities": ["default"]
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' data:; style-src 'self' 'unsafe-inline'; media-src asset: http://asset.localhost",
+      "capabilities": ["default"],
+      "assetProtocol": {
+        "enable": true
+      }
     }
   },
   "bundle": {

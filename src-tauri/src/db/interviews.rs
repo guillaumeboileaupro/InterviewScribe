@@ -41,7 +41,7 @@ pub fn create_realtime(
 
 pub fn get(conn: &Connection, id: i64) -> Result<Interview, AppError> {
     conn.query_row(
-        "SELECT id, title, language, mode, audio_path, status, error_message, created_at, updated_at
+        "SELECT id, title, notes, language, mode, audio_path, status, error_message, created_at, updated_at
          FROM interview WHERE id = ?1",
         params![id],
         row_to_interview,
@@ -54,7 +54,7 @@ pub fn get(conn: &Connection, id: i64) -> Result<Interview, AppError> {
 
 pub fn list(conn: &Connection) -> Result<Vec<Interview>, AppError> {
     let mut stmt = conn.prepare(
-        "SELECT id, title, language, mode, audio_path, status, error_message, created_at, updated_at
+        "SELECT id, title, notes, language, mode, audio_path, status, error_message, created_at, updated_at
          FROM interview ORDER BY created_at DESC",
     )?;
     let rows = stmt.query_map([], row_to_interview)?;
@@ -74,7 +74,7 @@ pub fn list_recovery_candidates(
     active_interview_id: Option<i64>,
 ) -> Result<Vec<Interview>, AppError> {
     let mut stmt = conn.prepare(
-        "SELECT id, title, language, mode, audio_path, status, error_message, created_at, updated_at
+        "SELECT id, title, notes, language, mode, audio_path, status, error_message, created_at, updated_at
          FROM interview
          WHERE mode = 'realtime' AND status = 'transcribing'
            AND (?1 IS NULL OR id != ?1)
@@ -92,6 +92,19 @@ pub fn set_audio_path(conn: &Connection, id: i64, audio_path: &str) -> Result<()
     conn.execute(
         "UPDATE interview SET audio_path = ?1, updated_at = ?2 WHERE id = ?3",
         params![audio_path, super::now_epoch_secs(), id],
+    )?;
+    Ok(())
+}
+
+/// Sets the free-text note attached to an interview (distinct from `title`
+/// and never touched by transcription/cleanup - purely a user-owned memo).
+/// `None`/empty clears it. Editable at any time, not just at creation, since
+/// the field is optional and often filled in after the fact.
+pub fn update_notes(conn: &Connection, id: i64, notes: Option<&str>) -> Result<(), AppError> {
+    let notes = notes.filter(|value| !value.trim().is_empty());
+    conn.execute(
+        "UPDATE interview SET notes = ?1, updated_at = ?2 WHERE id = ?3",
+        params![notes, super::now_epoch_secs(), id],
     )?;
     Ok(())
 }
@@ -153,13 +166,14 @@ fn row_to_interview(row: &Row) -> rusqlite::Result<Interview> {
     Ok(Interview {
         id: row.get(0)?,
         title: row.get(1)?,
-        language: row.get(2)?,
-        mode: row.get(3)?,
-        audio_path: row.get(4)?,
-        status: row.get(5)?,
-        error_message: row.get(6)?,
-        created_at: row.get(7)?,
-        updated_at: row.get(8)?,
+        notes: row.get(2)?,
+        language: row.get(3)?,
+        mode: row.get(4)?,
+        audio_path: row.get(5)?,
+        status: row.get(6)?,
+        error_message: row.get(7)?,
+        created_at: row.get(8)?,
+        updated_at: row.get(9)?,
     })
 }
 
@@ -189,6 +203,22 @@ mod tests {
         let conn = setup();
         let err = get(&conn, 999).unwrap_err();
         assert!(matches!(err, AppError::NotFound(_)));
+    }
+
+    #[test]
+    fn update_notes_persists_and_clears() {
+        let conn = setup();
+        let created = create(&conn, "Entretien test", None, "/audio/1.wav").unwrap();
+        assert_eq!(get(&conn, created.id).unwrap().notes, None);
+
+        update_notes(&conn, created.id, Some("Rappeler le contexte")).unwrap();
+        assert_eq!(
+            get(&conn, created.id).unwrap().notes.as_deref(),
+            Some("Rappeler le contexte")
+        );
+
+        update_notes(&conn, created.id, Some("   ")).unwrap();
+        assert_eq!(get(&conn, created.id).unwrap().notes, None);
     }
 
     #[test]

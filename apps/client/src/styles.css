@@ -499,6 +499,23 @@ input {
 .segment + .segment {
   border-top: 1px solid var(--border);
 }
+.segmentPlaying {
+  background: color-mix(in srgb, var(--accent-text) 10%, transparent);
+}
+.timestampSeek {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+.timestampSeek time {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+}
+.timestampSeek:hover time,
+.timestampSeek:focus-visible time {
+  color: var(--accent-text);
+}
 .segmentMeta {
   display: flex;
   gap: 20px;

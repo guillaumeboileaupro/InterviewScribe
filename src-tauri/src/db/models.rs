@@ -4,6 +4,7 @@ use serde::Serialize;
 pub struct Interview {
     pub id: i64,
     pub title: String,
+    pub notes: Option<String>,
     pub language: Option<String>,
     pub mode: String,
     pub audio_path: String,

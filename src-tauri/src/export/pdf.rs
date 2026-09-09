@@ -67,6 +67,7 @@ mod tests {
                 audio_path: "/audio/1.wav".into(),
                 status: "transcribed".into(),
                 error_message: None,
+                notes: None,
                 created_at: "0".into(),
                 updated_at: "0".into(),
             },

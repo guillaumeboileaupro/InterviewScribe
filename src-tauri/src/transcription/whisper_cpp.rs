@@ -27,29 +27,55 @@ impl WhisperCppTranscriber {
 
 impl Transcriber for WhisperCppTranscriber {
     fn transcribe(&self, pcm: &[f32], language: Option<&str>) -> Result<Vec<RawSegment>, AppError> {
-        let mut state = self
-            .context
-            .create_state()
-            .map_err(|err| AppError::Transcription(format!("echec de creation d'etat: {err}")))?;
+        self.run(Self::base_params(language), pcm)
+    }
+}
 
-        // BeamSearch{beam_size: 5} was the previous choice here, but
-        // whisper-rs's own doc comment on that field is explicit: "at the
-        // cost of exponential CPU time." That combined with sustained heavy
-        // system load is the confirmed real-world cause of transcription
-        // effectively never finishing (180s+ observed for a 3s clip even
-        // with the smallest bundled model - see
-        // docs/TEST_IMPLEMENTATION_PLAN.md item 2.4, and real user reports
-        // of the same on both installed .deb and .exe builds). `patience`
-        // was never doing anything either way: whisper-rs documents it as
-        // "not implemented in whisper.cpp". Greedy{best_of: 5} keeps the
-        // same "consider 5 candidates" intent at the cost whisper.cpp is
-        // actually built for.
+impl WhisperCppTranscriber {
+    // BeamSearch{beam_size: 5} was the previous choice here, but whisper-rs's
+    // own doc comment on that field is explicit: "at the cost of exponential
+    // CPU time." That combined with sustained heavy system load is the
+    // confirmed real-world cause of transcription effectively never
+    // finishing (180s+ observed for a 3s clip even with the smallest bundled
+    // model - see docs/TEST_IMPLEMENTATION_PLAN.md item 2.4, and real user
+    // reports of the same on both installed .deb and .exe builds). `patience`
+    // was never doing anything either way: whisper-rs documents it as "not
+    // implemented in whisper.cpp". Greedy{best_of: 5} keeps the same
+    // "consider 5 candidates" intent at the cost whisper.cpp is actually
+    // built for.
+    fn base_params(language: Option<&str>) -> FullParams<'_, 'static> {
         let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 5 });
         params.set_language(language);
         params.set_print_special(false);
         params.set_print_progress(false);
         params.set_print_realtime(false);
         params.set_print_timestamps(false);
+        params
+    }
+
+    /// Same transcription as `Transcriber::transcribe`, but reports
+    /// whisper.cpp's own 0-100 progress as it runs - lets the frontend show a
+    /// real progress bar instead of a static "in progress" label. Kept off
+    /// the `Transcriber` trait itself: `recovery::transcribe_remainder` and
+    /// the AMI evaluation harness share that trait and have no use for
+    /// progress reporting, so adding it there would force unrelated changes
+    /// to `recovery.rs`.
+    pub fn transcribe_with_progress(
+        &self,
+        pcm: &[f32],
+        language: Option<&str>,
+        on_progress: impl FnMut(i32) + 'static,
+    ) -> Result<Vec<RawSegment>, AppError> {
+        let mut params = Self::base_params(language);
+        params.set_progress_callback_safe(on_progress);
+        self.run(params, pcm)
+    }
+
+    fn run(&self, params: FullParams<'_, '_>, pcm: &[f32]) -> Result<Vec<RawSegment>, AppError> {
+        let mut state = self
+            .context
+            .create_state()
+            .map_err(|err| AppError::Transcription(format!("echec de creation d'etat: {err}")))?;
 
         state
             .full(params, pcm)

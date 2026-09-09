@@ -28,6 +28,15 @@ struct ActiveRecording {
     interview_id: i64,
 }
 
+/// Emitted as `"transcription-progress"` while `transcribe_local` runs, from
+/// whisper.cpp's own 0-100 progress callback - drives a real progress bar on
+/// the frontend instead of a static "in progress" label.
+#[derive(Serialize, Clone)]
+struct TranscriptionProgress {
+    interview_id: i64,
+    percent: i32,
+}
+
 fn app_data_subdir(app: &tauri::AppHandle, name: &str) -> Result<std::path::PathBuf, AppError> {
     let base = app
         .path()
@@ -211,6 +220,17 @@ fn get_interview(
 }
 
 #[tauri::command]
+fn update_interview_notes(
+    db: tauri::State<DbState>,
+    interview_id: i64,
+    notes: Option<String>,
+) -> Result<db::models::Interview, AppError> {
+    let conn = lock_db(&db)?;
+    db::interviews::update_notes(&conn, interview_id, notes.as_deref())?;
+    db::interviews::get(&conn, interview_id)
+}
+
+#[tauri::command]
 fn delete_interview(
     app: tauri::AppHandle,
     db: tauri::State<DbState>,
@@ -308,8 +328,17 @@ fn transcribe_local(
     let transcriber =
         transcription::whisper_cpp::WhisperCppTranscriber::load(Path::new(&model_path))
             .map_err(mark_error)?;
+    let progress_app = app.clone();
     let raw_segments = transcriber
-        .transcribe(&pcm, interview.language.as_deref())
+        .transcribe_with_progress(&pcm, interview.language.as_deref(), move |percent| {
+            let _ = progress_app.emit(
+                "transcription-progress",
+                TranscriptionProgress {
+                    interview_id,
+                    percent,
+                },
+            );
+        })
         .map_err(mark_error)?;
 
     let conn = lock_db(db)?;
@@ -994,6 +1023,13 @@ pub fn run() {
             let conn = db::open(&base.join("interviewscribe.sqlite3"))?;
             app.manage(DbState(Mutex::new(conn)));
             app.manage(RecordingState(Mutex::new(None)));
+            // Lets the frontend play back an interview's own audio via
+            // convertFileSrc() (re-listen feature) without widening the
+            // asset protocol to the whole filesystem - only this app's
+            // private audio directory is ever reachable through it.
+            let audio_dir = app_data_subdir(app.handle(), "audio")?;
+            app.asset_protocol_scope()
+                .allow_directory(&audio_dir, false)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1005,6 +1041,7 @@ pub fn run() {
             keep_interrupted_as_is,
             recover_interview,
             get_interview,
+            update_interview_notes,
             delete_interview,
             ensure_whisper_model,
             list_available_models,

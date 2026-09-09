@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import {
   applySegmentCleanup,
   checkDocExportAvailable,
@@ -28,6 +29,7 @@ import {
   stopRecording,
   transcribeInterview,
   undoSegmentEdit,
+  updateInterviewNotes,
   type DiffPart,
   type ExportFormat,
   type Interview,
@@ -133,6 +135,11 @@ export default function App() {
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const recordingInterviewIdRef = useRef<number | null>(null);
 
+  const [transcriptionPercent, setTranscriptionPercent] = useState<
+    number | null
+  >(null);
+  const transcribingInterviewIdRef = useRef<number | null>(null);
+
   const [diagnosticsText, setDiagnosticsText] = useState("");
   const [diagnosticsCopied, setDiagnosticsCopied] = useState(false);
 
@@ -236,12 +243,23 @@ export default function App() {
     const unlistenError = listen<string>("recording-error", (event) => {
       setRecordingError(event.payload);
     });
+    const unlistenTranscriptionProgress = listen<{
+      interview_id: number;
+      percent: number;
+    }>("transcription-progress", (event) => {
+      if (event.payload.interview_id !== transcribingInterviewIdRef.current)
+        return;
+      setTranscriptionPercent(event.payload.percent);
+    });
     return () => {
       // Fire-and-forget: nothing meaningful to do if unregistering a
       // listener fails during teardown (e.g. the window is already closing).
       unlistenLevel.then((unlisten) => unlisten()).catch(() => {});
       unlistenSegments.then((unlisten) => unlisten()).catch(() => {});
       unlistenError.then((unlisten) => unlisten()).catch(() => {});
+      unlistenTranscriptionProgress
+        .then((unlisten) => unlisten())
+        .catch(() => {});
     };
   }, []);
 
@@ -340,6 +358,8 @@ export default function App() {
       );
       refreshInterviews();
       const parsedCount = Number.parseInt(expectedSpeakerCount, 10);
+      transcribingInterviewIdRef.current = interview.id;
+      setTranscriptionPercent(0);
       const detail = await transcribeInterview(
         interview.id,
         Number.isFinite(parsedCount) && parsedCount > 0
@@ -354,6 +374,8 @@ export default function App() {
     } finally {
       refreshInterviews();
       setPrepareBusy(false);
+      transcribingInterviewIdRef.current = null;
+      setTranscriptionPercent(null);
     }
   };
 
@@ -392,6 +414,39 @@ export default function App() {
       );
     } catch (err) {
       setPrepareError(String(err));
+    }
+  };
+
+  const notesRef = useRef<HTMLTextAreaElement>(null);
+  const [notesSaving, setNotesSaving] = useState(false);
+  const [notesError, setNotesError] = useState<string | null>(null);
+
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [audioCurrentMs, setAudioCurrentMs] = useState(0);
+
+  const seekToSegment = (startMs: number) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.currentTime = startMs / 1000;
+    audio.play().catch(() => {});
+  };
+
+  const handleSaveNotes = async () => {
+    if (!currentInterview || !notesRef.current) return;
+    setNotesSaving(true);
+    setNotesError(null);
+    try {
+      const updated = await updateInterviewNotes(
+        currentInterview.interview.id,
+        notesRef.current.value,
+      );
+      setCurrentInterview((detail) =>
+        detail ? { ...detail, interview: updated } : detail,
+      );
+    } catch (err) {
+      setNotesError(String(err));
+    } finally {
+      setNotesSaving(false);
     }
   };
 
@@ -962,6 +1017,44 @@ export default function App() {
                   {interviewError}
                 </div>
               )}
+              <section className="settingsPanel">
+                <h2>Audio</h2>
+                <audio
+                  ref={audioRef}
+                  controls
+                  src={convertFileSrc(currentInterview.interview.audio_path)}
+                  onTimeUpdate={(event) =>
+                    setAudioCurrentMs(event.currentTarget.currentTime * 1000)
+                  }
+                  style={{ width: "100%" }}
+                />
+              </section>
+              <section className="settingsPanel">
+                <h2>Commentaire (optionnel)</h2>
+                <textarea
+                  key={currentInterview.interview.id}
+                  ref={notesRef}
+                  aria-label="Commentaire de l’entretien"
+                  defaultValue={currentInterview.interview.notes ?? ""}
+                  placeholder="Notes personnelles sur cet entretien…"
+                  rows={3}
+                  style={{ width: "100%" }}
+                />
+                <button
+                  className="secondary"
+                  onClick={handleSaveNotes}
+                  disabled={notesSaving}
+                >
+                  {notesSaving
+                    ? "Enregistrement…"
+                    : "Enregistrer le commentaire"}
+                </button>
+                {notesError && (
+                  <div className="notice" role="alert">
+                    {notesError}
+                  </div>
+                )}
+              </section>
               <section className="transcript">
                 <div className="transcriptToolbar">
                   <strong>
@@ -990,11 +1083,26 @@ export default function App() {
                   currentInterview.segments.map((segment) => {
                     const isEdited = segment.current_text !== segment.raw_text;
                     const diffParts = cleanupDiffs[segment.id];
+                    const isPlaying =
+                      audioCurrentMs >= segment.start_ms &&
+                      audioCurrentMs < segment.end_ms;
                     return (
-                      <article className="segment" key={segment.id}>
+                      <article
+                        className={
+                          isPlaying ? "segment segmentPlaying" : "segment"
+                        }
+                        key={segment.id}
+                      >
                         <div className="segmentMeta">
                           {timestamps && (
-                            <time>{formatTimestamp(segment.start_ms)}</time>
+                            <button
+                              type="button"
+                              className="timestampSeek"
+                              onClick={() => seekToSegment(segment.start_ms)}
+                              aria-label={`Ecouter a partir de ${formatTimestamp(segment.start_ms)}`}
+                            >
+                              <time>{formatTimestamp(segment.start_ms)}</time>
+                            </button>
                           )}
                           <select
                             className="speaker"
@@ -1028,6 +1136,7 @@ export default function App() {
                         {editingSegmentId === segment.id ? (
                           <>
                             <textarea
+                              aria-label="Texte du segment"
                               value={draftText}
                               onChange={(event) =>
                                 setDraftText(event.target.value)
@@ -1321,6 +1430,14 @@ export default function App() {
                         ? "Transcription en cours…"
                         : "Choisir un fichier audio"}
                     </button>
+                    {prepareBusy && transcriptionPercent !== null && (
+                      <progress
+                        value={transcriptionPercent}
+                        max={100}
+                        style={{ width: "100%" }}
+                        aria-label="Progression de la transcription"
+                      />
+                    )}
                   </>
                 ) : (
                   <>

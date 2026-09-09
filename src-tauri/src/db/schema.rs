@@ -12,6 +12,7 @@ pub fn init(conn: &Connection) -> Result<(), AppError> {
         CREATE TABLE IF NOT EXISTS interview (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             title TEXT NOT NULL,
+            notes TEXT,
             language TEXT,
             mode TEXT NOT NULL CHECK (mode IN ('posteriori','realtime')),
             audio_path TEXT NOT NULL,
@@ -75,6 +76,7 @@ pub fn init(conn: &Connection) -> Result<(), AppError> {
 /// the in-memory tests below, which always started from a fresh connection).
 fn migrate(conn: &Connection) -> Result<(), AppError> {
     ensure_column(conn, "edit", "reverted_at", "TEXT")?;
+    ensure_column(conn, "interview", "notes", "TEXT")?;
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_edit_segment ON edit(segment_id, reverted_at)",
         [],
@@ -138,7 +140,7 @@ mod tests {
         )
         .unwrap();
 
-        migrate(&conn).unwrap();
+        init(&conn).unwrap();
 
         let has_column: bool = conn
             .prepare("PRAGMA table_info(edit)")
@@ -150,7 +152,41 @@ mod tests {
         assert!(has_column);
 
         // Running it again must not error (idempotent).
-        migrate(&conn).unwrap();
+        init(&conn).unwrap();
+    }
+
+    #[test]
+    fn migrate_adds_notes_to_a_pre_existing_interview_table() {
+        let conn = Connection::open_in_memory().unwrap();
+        // Simulate a database created before `notes` existed.
+        conn.execute_batch(
+            "CREATE TABLE interview (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                language TEXT,
+                mode TEXT NOT NULL,
+                audio_path TEXT NOT NULL,
+                status TEXT NOT NULL,
+                error_message TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );",
+        )
+        .unwrap();
+
+        init(&conn).unwrap();
+
+        let has_column: bool = conn
+            .prepare("PRAGMA table_info(interview)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .filter_map(Result::ok)
+            .any(|name| name == "notes");
+        assert!(has_column);
+
+        // Running it again must not error (idempotent).
+        init(&conn).unwrap();
     }
 
     #[test]

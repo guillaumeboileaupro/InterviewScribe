@@ -1,7 +1,14 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { clearMocks, mockConvertFileSrc, mockIPC } from "@tauri-apps/api/mocks";
 import App from "./App";
+
+beforeEach(() => {
+  // The interview detail page plays back audio via convertFileSrc() (see
+  // App.tsx) - without this, calling it outside a real Tauri context throws
+  // and the whole page fails to render.
+  mockConvertFileSrc("linux");
+});
 
 afterEach(() => {
   clearMocks();
@@ -1000,9 +1007,12 @@ describe("App", () => {
       }),
     );
     fireEvent.click(await screen.findByRole("button", { name: "Modifier" }));
-    fireEvent.change(screen.getByRole("textbox"), {
-      target: { value: "Salut !" },
-    });
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Texte du segment" }),
+      {
+        target: { value: "Salut !" },
+      },
+    );
     fireEvent.click(screen.getByRole("button", { name: "Enregistrer" }));
     fireEvent.click(
       await screen.findByRole("checkbox", { name: "Version nettoyée" }),

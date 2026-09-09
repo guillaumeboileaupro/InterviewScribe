@@ -314,3 +314,28 @@ et ne depend d'aucune donnee sensible.
 | 2026-09-09 | 7.1 | Fixture SQL v0 lisible ajoutee avec projet synthetique complet ; migration v1, donnees, brut et idempotence testes. |
 | 2026-09-09 | 7.2 (partiel) | Script N-1 vers N Linux et job release ajoutes avec profil isole ; attente d'une execution native sur le prochain tag. |
 | 2026-09-09 | 7.3 (partiel) | Script N-1 vers N Windows/NSIS et job release ajoutes avec profil APPDATA isole ; attente du prochain tag. |
+| 2026-09-09 | 7.4 (partiel) | E2E `.deb`/NSIS force hors connexion par pare-feu et exige le modele pret ; APK installee non encore disponible. |
+| 2026-09-09 | 7.5 (partiel) | Desinstallation `.deb`/NSIS controle les sentinelles du profil et d'un export externe ; execution native du prochain tag requise. |
+| 2026-09-09 | 7.6 (partiel) | Job emulateur ARM64 ajoute avec controle ABI, installation, lancement, crash, processus et desinstallation ; attente du prochain tag. |
+| 2026-09-09 | 7.7 (prepare) | Campagne appareil physique AND-01 a AND-05 documentee ; execution materielle requise. |
+| 2026-09-09 | 8.1 | Job PR `check` aligne sur `pnpm check` ; 46 tests UI, build, confidentialite, clippy et 169 tests Rust valides localement. |
+| 2026-09-09 | 8.2 | E2E courts Linux et Windows confirmes sur PR : application installee, navigation, modele hors ligne et debut d'import reel. |
+
+## 9. Retours utilisateurs — lecteur, notes et progression
+
+Travail issu d'un retour utilisateur direct :
+
+- [x] 9.1 Supprimer la fenetre console parasite des builds Windows release.
+- [x] 9.2 Afficher la progression 0-100 fournie par Whisper pendant la transcription.
+- [x] 9.3 Ajouter un commentaire optionnel persistant par entretien avec migration SQLite.
+- [x] 9.4 Permettre la reecoute de l'audio prive sans elargir le scope de fichiers.
+- [x] 9.5 Cliquer un horodatage pour lire le segment et signaler le segment actif.
+- [x] 9.6 Adapter les tests, fixtures d'export et migrations au champ `notes`.
+- [ ] 9.7 Valider visuellement progression, lecteur et correlation temporelle sur
+  les applications desktop installees et sur Android.
+
+Validation automatisee : 46 tests frontend, build, confidentialite, clippy sans
+avertissement et 169 tests Rust reussis. Neuf tests materiels/lourds restent
+explicitement ignores. `clippy --all-targets --features wdio-e2e` est vert ; le
+second passage des tests avec cette feature a ete interrompu par manque d'espace
+puis verrou Cargo concurrent, sans erreur de code observee.

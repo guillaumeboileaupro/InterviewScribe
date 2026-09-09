@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 export interface Interview {
   id: number;
   title: string;
+  notes: string | null;
   language: string | null;
   mode: string;
   audio_path: string;
@@ -133,6 +134,13 @@ export function getInterview(interviewId: number): Promise<InterviewDetail> {
 
 export function deleteInterview(interviewId: number): Promise<void> {
   return invoke("delete_interview", { interviewId });
+}
+
+export function updateInterviewNotes(
+  interviewId: number,
+  notes: string,
+): Promise<Interview> {
+  return invoke("update_interview_notes", { interviewId, notes });
 }
 
 export function ensureWhisperModel(): Promise<ModelStatus> {

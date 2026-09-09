@@ -1,8 +1,15 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
+import { clearMocks, mockConvertFileSrc, mockIPC } from "@tauri-apps/api/mocks";
 import axe from "axe-core";
 import App from "./App";
+
+beforeEach(() => {
+  // The interview detail page plays back audio via convertFileSrc() (see
+  // App.tsx) - without this, calling it outside a real Tauri context throws
+  // and the whole page fails to render.
+  mockConvertFileSrc("linux");
+});
 
 afterEach(() => {
   clearMocks();
