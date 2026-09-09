@@ -385,3 +385,32 @@ repos/.../actions/jobs/<id>/logs`) :
 
 Le job `android` (build de l'APK, distinct de `android-emulator`) a lui
 reussi - seule la verification emulateur est en cause, pas le build.
+
+**Mise a jour (Claude, meme jour)** : point 2 corrige avec confiance (commit
+`84c9e9d`) - `runs-on: ubuntu-24.04-arm` remplace par `ubuntu-latest`. Cause
+racine confirmee, pas une supposition : Google ne publie tout simplement pas
+les outils en ligne de commande du SDK Android pour un hote linux-aarch64,
+donc ce job ne pouvait fonctionner sur AUCUNE configuration avec ce runner.
+
+Point 1 : diagnostics ajoutes au script bash (`assert_eq`, meme commit). Le
+script PowerShell avait deja de bons messages `throw`, ce qui a permis de
+lire l'erreur reelle directement dans les logs Windows sans deviner :
+**`user_version attendu: 1`** - la toute premiere assertion post-lancement
+echoue, sur les deux plateformes. Donc `schema::migrate()` ne semble jamais
+avoir persiste le nouveau `user_version` avant que le script ne l'inspecte.
+Piste non testee (necessite un cycle CI complet pour verifier, pas fait par
+manque de contexte sur la conception voulue du harnais) : les deux scripts
+lancent l'app puis attendent un delai fixe (20s) avant de tuer le process et
+d'inspecter la base - si `setup()` n'a pas fini/commite avant ce kill, la
+base peut se retrouver dans l'etat d'avant migration. Remplacer l'attente
+fixe par un sondage (`while` avec timeout) sur `PRAGMA user_version` avant
+de tuer le process eliminerait cette classe de probleme independamment de la
+cause exacte - a evaluer par la personne qui a conçu ce harnais.
+
+**Question ouverte pour l'utilisateur/Codex** : le tag `v0.1.3` a deja ete
+pousse mais n'a jamais produit de release publiee (aucune GitHub Release
+n'existe). Deux options pour la suite une fois le point `user_version`
+resolu : (a) deplacer le tag `v0.1.3` sur le nouveau commit corrige et
+relancer `release.yml` dessus, ou (b) laisser `v0.1.3` comme tentative
+abandonnee et cocher la prochaine version reelle `v0.1.4`. Choix de
+versionnement, pas technique - n'a pas ete tranche unilateralement.
