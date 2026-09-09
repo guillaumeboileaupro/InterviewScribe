@@ -180,6 +180,8 @@ ce qui doit etre fait ensuite, et dans quel ordre.
 - Les migrations N-1 vers N sont testees sur une copie synthetique.
 - Les artefacts sont testes sur leur plateforme cible et leurs sommes sont
   publiees.
+- Le job `release-gate` exige les rapports automatises Linux, Windows et Android
+  avant de declarer la chaine de release valide.
 - Toute validation manuelle indique date, plateforme, version, protocole et
   resultat, sans donnee sensible.
 - Les limites restantes sont listees dans `docs/ROADMAP.md`; elles ne sont pas

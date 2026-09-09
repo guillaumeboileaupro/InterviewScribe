@@ -267,8 +267,10 @@ et ne depend d'aucune donnee sensible.
 - [x] 8.5 Publier rapports WER/CER/DER, performance et packaging sans donnees brutes.
   Rapports JSON structures ajoutes aux workflows nocturne et release ; seuls
   metriques, verdicts, tailles et SHA-256 sont publies.
-- [ ] 8.6 Bloquer une release si une preuve obligatoire manque, sans bloquer sur
+- [x] 8.6 Bloquer une release si une preuve obligatoire manque, sans bloquer sur
   une validation explicitement classee `MATERIEL` hors environnement.
+  Gate final exige les jobs et rapports Linux, Windows et Android ; les
+  protocoles materiels restent attestes separement et ne sont pas simules.
 
 ## Journal d'avancement
 

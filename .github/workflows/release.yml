@@ -308,3 +308,32 @@ jobs:
           name: packaging-report-android-arm64
           path: packaging-android-arm64.json
           if-no-files-found: warn
+
+  release-gate:
+    if: always()
+    needs: [desktop, android, android-emulator]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every automated platform job
+        env:
+          DESKTOP_RESULT: ${{ needs.desktop.result }}
+          ANDROID_RESULT: ${{ needs.android.result }}
+          EMULATOR_RESULT: ${{ needs.android-emulator.result }}
+        run: |
+          [ "$DESKTOP_RESULT" = success ]
+          [ "$ANDROID_RESULT" = success ]
+          [ "$EMULATOR_RESULT" = success ]
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: packaging-report-*
+          path: packaging-reports
+          merge-multiple: true
+      - name: Verify required release evidence
+        run: node scripts/verify-release-evidence.mjs packaging-reports release-evidence.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-evidence
+          path: release-evidence.json
+          if-no-files-found: error
+          retention-days: 90
