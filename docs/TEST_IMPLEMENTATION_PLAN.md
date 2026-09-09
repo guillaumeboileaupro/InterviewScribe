@@ -236,6 +236,8 @@ et ne depend d'aucune donnee sensible.
   Script et job de release ajoutes ; execution native du prochain tag requise
   avant validation.
 - [ ] 7.3 Installer N-1 puis N sous Windows et verifier migration et donnees.
+  Script et job de release ajoutes ; execution native du prochain tag requise
+  avant validation.
 - [ ] 7.4 Lancer chaque artefact installe et verifier le modele hors connexion.
 - [ ] 7.5 Verifier desinstallation sans effacer les donnees utilisateur hors scope.
 - [ ] 7.6 Tester l'APK sur emulateur arm64-v8a.
@@ -293,3 +295,4 @@ et ne depend d'aucune donnee sensible.
 | 2026-09-09 | 6.3 | Une heure synthetique executee en trames de 20 ms : 601 fenetres, pic 96 000 echantillons, aucune perte sur 57,6 M, 36 ms mur, 230 400 044 octets projetes. |
 | 2026-09-09 | 7.1 | Fixture SQL v0 lisible ajoutee avec projet synthetique complet ; migration v1, donnees, brut et idempotence testes. |
 | 2026-09-09 | 7.2 (partiel) | Script N-1 vers N Linux et job release ajoutes avec profil isole ; attente d'une execution native sur le prochain tag. |
+| 2026-09-09 | 7.3 (partiel) | Script N-1 vers N Windows/NSIS et job release ajoutes avec profil APPDATA isole ; attente du prochain tag. |

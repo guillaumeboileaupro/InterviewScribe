@@ -125,6 +125,37 @@ jobs:
           if (Test-Path $installDir) { throw "install directory still exists after uninstall: $installDir" }
           Write-Host "Uninstall verified: $installDir removed"
 
+      - name: Install SQLite for Windows upgrade validation
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: choco install sqlite -y --no-progress
+
+      - name: Download previous NSIS release
+        if: matrix.platform == 'windows-latest'
+        id: previous-nsis
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $current = '${{ github.ref_name }}'
+          $previous = git tag --sort=-version:refname | Where-Object { $_ -ne $current } | Select-Object -First 1
+          if (-not $previous) { throw "No previous release tag found" }
+          $directory = Join-Path $env:RUNNER_TEMP "previous-release"
+          New-Item -ItemType Directory -Force -Path $directory | Out-Null
+          gh release download $previous --pattern '*.exe' --dir $directory
+          $oldInstaller = Get-ChildItem -LiteralPath $directory -Filter '*.exe' | Select-Object -First 1
+          if (-not $oldInstaller) { throw "No NSIS installer found for $previous" }
+          "path=$($oldInstaller.FullName)" >> $env:GITHUB_OUTPUT
+          "tag=$previous" >> $env:GITHUB_OUTPUT
+
+      - name: Verify Windows upgrade preserves N-1 data
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $newInstaller = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Filter "*.exe" | Select-Object -First 1
+          if (-not $newInstaller) { throw "No current NSIS installer found" }
+          ./scripts/test-upgrade-windows.ps1 -OldInstaller '${{ steps.previous-nsis.outputs.path }}' -NewInstaller $newInstaller.FullName
+
       - name: Publish checksum (NSIS installer)
         if: matrix.platform == 'windows-latest'
         shell: pwsh
