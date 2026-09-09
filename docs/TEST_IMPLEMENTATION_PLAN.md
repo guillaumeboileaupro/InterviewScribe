@@ -454,3 +454,25 @@ de les stabiliser separement, plutot que de bloquer indefiniment la
 publication d'une version par ailleurs prete (build desktop et APK tous les
 deux reussis a chaque tentative). Decision produit, pas technique - laissee
 ouverte plutot que tranchee unilateralement.
+
+**Cloture (Claude, meme jour)** : utilisateur a valide la recommandation
+ci-dessus. Verifications N-1 (les deux plateformes, commit `195ec53`) et
+evidence Android (commit `b148c90`) rendues non-bloquantes
+(`continue-on-error`), l'echec reel de chacune restant visible dans les logs
+et artefacts de diagnostic - rien de cache. **Run `34409950428` : succes
+reel** (`release-gate` vert), tag `v0.1.3` deplace une derniere fois dessus.
+Regression reelle trouvee au passage et corrigee (commit `e55b0cb`) : aucune
+etape n'attachait jamais l'APK a la release GitHub elle-meme (seulement aux
+artefacts internes du workflow) - le prochain tag en beneficiera
+automatiquement; pour ce run-ci, APK et checksum attaches manuellement
+depuis l'artefact deja construit (evite un 6e cycle CI complet).
+
+**v0.1.3 publiee et verifiee** :
+https://github.com/guillaumeboileaupro/InterviewScribe/releases/tag/v0.1.3 -
+les 3 fichiers (`.exe`, `.deb`, `.apk`) + leurs `.sha256` repondent HTTP 200.
+README mis a jour vers v0.1.3 (commit `6e47c97`).
+
+Restant ouvert, non bloquant pour cette version, a reprendre separement :
+le vrai bug de migration `user_version` sur Windows (echoue encore a 60s) et
+le crash reel de l'emulateur Android (`Connection refused` sur son port,
+diagnostics uploades non examines).
