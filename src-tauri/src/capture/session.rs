@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
@@ -9,7 +10,7 @@ use crate::capture::chunker::{ChunkEvent, Chunker};
 use crate::capture::vad::{rms, Vad, VadConfig};
 use crate::error::AppError;
 
-const MAX_CHUNK_DURATION_MS: u32 = 30_000;
+const MAX_CHUNK_DURATION_MS: u32 = 15_000;
 const SILENCE_TO_CLOSE_MS: u32 = 800;
 const LEVEL_UPDATE_INTERVAL_MS: u32 = 100;
 
@@ -18,13 +19,7 @@ const LEVEL_UPDATE_INTERVAL_MS: u32 = 100;
 /// capturing, leveling and chunking audio, never about Whisper or the
 /// database.
 pub enum SessionEvent {
-    LevelUpdate {
-        rms: f32,
-    },
-    /// Always 16kHz mono f32, ready for `Transcriber::transcribe` directly.
-    ChunkReady {
-        pcm: Vec<f32>,
-    },
+    LevelUpdate { rms: f32 },
     Error(String),
 }
 
@@ -39,6 +34,7 @@ enum ControlMsg {
 /// sends a message to that thread.
 pub struct RecordingHandle {
     control: mpsc::Sender<ControlMsg>,
+    transcription_lagged: Arc<AtomicBool>,
 }
 
 impl RecordingHandle {
@@ -53,6 +49,10 @@ impl RecordingHandle {
     pub fn stop(self) {
         let _ = self.control.send(ControlMsg::Stop);
     }
+
+    pub fn lag_flag(&self) -> Arc<AtomicBool> {
+        self.transcription_lagged.clone()
+    }
 }
 
 /// Starts capturing from `device_name` (or the host default if `None`),
@@ -65,18 +65,30 @@ impl RecordingHandle {
 pub fn start(
     device_name: Option<String>,
     wav_path: PathBuf,
-    events: mpsc::Sender<SessionEvent>,
+    events: mpsc::SyncSender<SessionEvent>,
+    chunks: mpsc::SyncSender<Vec<f32>>,
 ) -> Result<RecordingHandle, AppError> {
     let (control_tx, control_rx) = mpsc::channel();
     let (ready_tx, ready_rx) = mpsc::channel();
 
+    let transcription_lagged = Arc::new(AtomicBool::new(false));
+    let thread_lagged = transcription_lagged.clone();
     std::thread::spawn(move || {
-        run_capture_thread(device_name, wav_path, events, control_rx, ready_tx)
+        run_capture_thread(
+            device_name,
+            wav_path,
+            events,
+            chunks,
+            control_rx,
+            ready_tx,
+            thread_lagged,
+        )
     });
 
     match ready_rx.recv() {
         Ok(Ok(())) => Ok(RecordingHandle {
             control: control_tx,
+            transcription_lagged,
         }),
         Ok(Err(message)) => Err(AppError::Audio(message)),
         Err(_) => Err(AppError::Audio(
@@ -115,6 +127,14 @@ fn resolve_device(host: &cpal::Host, name: Option<&str>) -> Result<cpal::Device,
 type SharedWriter = Arc<Mutex<Option<hound::WavWriter<std::io::BufWriter<std::fs::File>>>>>;
 type SharedFrameState = Arc<Mutex<FrameState>>;
 
+#[derive(Clone)]
+struct CaptureOutputs {
+    writer: SharedWriter,
+    events: mpsc::SyncSender<SessionEvent>,
+    chunks: mpsc::SyncSender<Vec<f32>>,
+    transcription_lagged: Arc<AtomicBool>,
+}
+
 struct FrameState {
     vad: Vad,
     chunker: Chunker,
@@ -134,7 +154,7 @@ fn write_mono_samples<W: std::io::Write + std::io::Seek>(
 fn write_or_report<W: std::io::Write + std::io::Seek>(
     writer: &mut Option<hound::WavWriter<W>>,
     samples: &[f32],
-    events: &mpsc::Sender<SessionEvent>,
+    events: &mpsc::SyncSender<SessionEvent>,
 ) {
     let Some(active_writer) = writer.as_mut() else {
         return;
@@ -163,19 +183,19 @@ impl FrameState {
 fn flush_pending_chunk(
     state: &SharedFrameState,
     sample_rate: u32,
-    events: &mpsc::Sender<SessionEvent>,
+    chunks: &mpsc::SyncSender<Vec<f32>>,
+    transcription_lagged: &AtomicBool,
 ) {
     if let Ok(mut guard) = state.lock() {
         if let ChunkEvent::Ready(chunk) = guard.chunker.flush() {
-            emit_ready_chunk(chunk, sample_rate, events);
+            emit_ready_chunk(chunk, sample_rate, chunks, transcription_lagged);
         }
     }
 }
 
 fn build_stream(
     device: &cpal::Device,
-    writer: SharedWriter,
-    events: mpsc::Sender<SessionEvent>,
+    outputs: CaptureOutputs,
 ) -> Result<(cpal::Stream, SharedFrameState, u32), String> {
     let config = device
         .default_input_config()
@@ -186,21 +206,20 @@ fn build_stream(
 
     let state: SharedFrameState = Arc::new(Mutex::new(FrameState::new()));
 
-    let error_events = events.clone();
+    let error_events = outputs.events.clone();
     let err_fn = move |err: cpal::Error| {
         let _ = error_events.send(SessionEvent::Error(format!("erreur audio: {err}")));
     };
 
     let stream = match config.sample_format() {
         cpal::SampleFormat::F32 => {
-            let writer = writer.clone();
-            let events = events.clone();
+            let outputs = outputs.clone();
             let state = state.clone();
             device
                 .build_input_stream(
                     stream_config,
                     move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                        process_input(data, channels, sample_rate, &state, &writer, &events);
+                        process_input(data, channels, sample_rate, &state, &outputs);
                     },
                     err_fn,
                     None,
@@ -208,8 +227,7 @@ fn build_stream(
                 .map_err(|err| err.to_string())?
         }
         cpal::SampleFormat::I16 => {
-            let writer = writer.clone();
-            let events = events.clone();
+            let outputs = outputs.clone();
             let state = state.clone();
             device
                 .build_input_stream(
@@ -217,7 +235,7 @@ fn build_stream(
                     move |data: &[i16], _: &cpal::InputCallbackInfo| {
                         let converted: Vec<f32> =
                             data.iter().map(|s| *s as f32 / i16::MAX as f32).collect();
-                        process_input(&converted, channels, sample_rate, &state, &writer, &events);
+                        process_input(&converted, channels, sample_rate, &state, &outputs);
                     },
                     err_fn,
                     None,
@@ -235,8 +253,7 @@ fn process_input(
     channels: usize,
     sample_rate: u32,
     state: &SharedFrameState,
-    writer: &SharedWriter,
-    events: &mpsc::Sender<SessionEvent>,
+    outputs: &CaptureOutputs,
 ) {
     let mono: Vec<f32> = if channels <= 1 {
         data.to_vec()
@@ -246,10 +263,10 @@ fn process_input(
             .collect()
     };
 
-    if let Ok(mut guard) = writer.lock() {
+    if let Ok(mut guard) = outputs.writer.lock() {
         // Stop writing after the first storage failure so it is reported once
         // and the recoverable prefix is not touched by later callbacks.
-        write_or_report(&mut guard, &mono, events);
+        write_or_report(&mut guard, &mono, &outputs.events);
     }
 
     let energy = rms(&mono);
@@ -261,17 +278,29 @@ fn process_input(
     let speech_active = guard.vad.process_frame(energy, frame_ms);
 
     if guard.last_level_emit.elapsed().as_millis() as u32 >= LEVEL_UPDATE_INTERVAL_MS {
-        let _ = events.send(SessionEvent::LevelUpdate { rms: energy });
+        let _ = outputs
+            .events
+            .try_send(SessionEvent::LevelUpdate { rms: energy });
         guard.last_level_emit = std::time::Instant::now();
     }
 
     if let ChunkEvent::Ready(chunk) = guard.chunker.push_frame(&mono, speech_active, frame_ms) {
         drop(guard);
-        emit_ready_chunk(chunk, sample_rate, events);
+        emit_ready_chunk(
+            chunk,
+            sample_rate,
+            &outputs.chunks,
+            &outputs.transcription_lagged,
+        );
     }
 }
 
-fn emit_ready_chunk(chunk: Vec<f32>, sample_rate: u32, events: &mpsc::Sender<SessionEvent>) {
+fn emit_ready_chunk(
+    chunk: Vec<f32>,
+    sample_rate: u32,
+    chunks: &mpsc::SyncSender<Vec<f32>>,
+    transcription_lagged: &AtomicBool,
+) {
     let resampled = if sample_rate == WHISPER_SAMPLE_RATE {
         Ok(chunk)
     } else {
@@ -279,10 +308,17 @@ fn emit_ready_chunk(chunk: Vec<f32>, sample_rate: u32, events: &mpsc::Sender<Ses
     };
     match resampled {
         Ok(pcm) => {
-            let _ = events.send(SessionEvent::ChunkReady { pcm });
+            if chunks.try_send(pcm).is_err() {
+                transcription_lagged.store(true, Ordering::Relaxed);
+                crate::diagnostics::log(
+                    "ERROR",
+                    "transcription en direct en retard; audio conserve pour recuperation",
+                );
+            }
         }
         Err(err) => {
-            let _ = events.send(SessionEvent::Error(err.to_string()));
+            transcription_lagged.store(true, Ordering::Relaxed);
+            crate::diagnostics::log("ERROR", &err.to_string());
         }
     }
 }
@@ -290,9 +326,11 @@ fn emit_ready_chunk(chunk: Vec<f32>, sample_rate: u32, events: &mpsc::Sender<Ses
 fn run_capture_thread(
     device_name: Option<String>,
     wav_path: PathBuf,
-    events: mpsc::Sender<SessionEvent>,
+    events: mpsc::SyncSender<SessionEvent>,
+    chunks: mpsc::SyncSender<Vec<f32>>,
     control_rx: mpsc::Receiver<ControlMsg>,
     ready_tx: mpsc::Sender<Result<(), String>>,
+    transcription_lagged: Arc<AtomicBool>,
 ) {
     let host = cpal::default_host();
     crate::diagnostics::log(
@@ -335,9 +373,15 @@ fn run_capture_thread(
         }
     };
     let writer: SharedWriter = Arc::new(Mutex::new(Some(file_writer)));
+    let outputs = CaptureOutputs {
+        writer: writer.clone(),
+        events: events.clone(),
+        chunks: chunks.clone(),
+        transcription_lagged: transcription_lagged.clone(),
+    };
 
     let (mut stream, mut frame_state, mut stream_rate) =
-        match build_stream(&device, writer.clone(), events.clone()) {
+        match build_stream(&device, outputs.clone()) {
             Ok(built) => built,
             Err(message) => {
                 crate::diagnostics::log(
@@ -372,12 +416,17 @@ fn run_capture_thread(
                     requested_device.is_some() && requested_device != current_device_name;
                 if changing_device {
                     match resolve_device(&host, requested_device.as_deref())
-                        .and_then(|device| build_stream(&device, writer.clone(), events.clone()))
+                        .and_then(|device| build_stream(&device, outputs.clone()))
                     {
                         Ok((new_stream, new_state, new_rate)) => {
                             // The previous device's still-accumulating chunk
                             // is flushed rather than silently discarded.
-                            flush_pending_chunk(&frame_state, stream_rate, &events);
+                            flush_pending_chunk(
+                                &frame_state,
+                                stream_rate,
+                                &chunks,
+                                &transcription_lagged,
+                            );
                             stream = new_stream;
                             frame_state = new_state;
                             stream_rate = new_rate;
@@ -405,7 +454,7 @@ fn run_capture_thread(
         }
     }
 
-    flush_pending_chunk(&frame_state, stream_rate, &events);
+    flush_pending_chunk(&frame_state, stream_rate, &chunks, &transcription_lagged);
     drop(stream);
     if let Ok(mut guard) = writer.lock() {
         if let Some(writer) = guard.take() {
@@ -474,7 +523,7 @@ mod tests {
         let header_len = state.lock().unwrap().1.len();
         state.lock().unwrap().2 = header_len + 8;
         let mut writer = Some(writer);
-        let (events_tx, events_rx) = mpsc::channel();
+        let (events_tx, events_rx) = mpsc::sync_channel(8);
 
         write_or_report(&mut writer, &[0.25; 100], &events_tx);
         write_or_report(&mut writer, &[0.25; 100], &events_tx);
@@ -493,6 +542,17 @@ mod tests {
         assert!(stored < header_len + 100 * std::mem::size_of::<f32>());
     }
 
+    #[test]
+    fn a_saturated_transcription_queue_is_bounded_and_marks_recovery_needed() {
+        let (chunks_tx, _chunks_rx) = mpsc::sync_channel(1);
+        chunks_tx.try_send(vec![0.0; 320]).unwrap();
+        let lagged = AtomicBool::new(false);
+
+        emit_ready_chunk(vec![0.25; 320], WHISPER_SAMPLE_RATE, &chunks_tx, &lagged);
+
+        assert!(lagged.load(Ordering::Relaxed));
+    }
+
     /// Exercises the real default input device: opens it, captures for a few
     /// seconds, pauses, resumes, then stops - verifying at least one level
     /// update arrives and the resulting WAV is valid and non-trivial. This is
@@ -509,8 +569,9 @@ mod tests {
         ));
         let _ = std::fs::remove_file(&wav_path);
 
-        let (events_tx, events_rx) = mpsc::channel();
-        let handle = start(None, wav_path.clone(), events_tx)
+        let (events_tx, events_rx) = mpsc::sync_channel(32);
+        let (chunks_tx, _chunks_rx) = mpsc::sync_channel(8);
+        let handle = start(None, wav_path.clone(), events_tx, chunks_tx)
             .expect("no default input device available on this machine");
 
         std::thread::sleep(std::time::Duration::from_secs(2));

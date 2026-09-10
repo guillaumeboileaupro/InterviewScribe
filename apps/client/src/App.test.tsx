@@ -928,7 +928,7 @@ describe("App", () => {
     fireEvent.click(cleanupButton);
 
     const undoButton = await screen.findByRole("button", { name: "Annuler" });
-    expect(undoButton).toBeEnabled();
+    await waitFor(() => expect(undoButton).toBeEnabled());
 
     fireEvent.click(undoButton);
     await waitFor(() =>

@@ -43,7 +43,7 @@ fn base_manifest() -> Result<ModelManifest, AppError> {
 /// One entry per Whisper transcription model the user can pick between (see
 /// docs/PRODUCT.md): id is stable across releases and is what the frontend
 /// sends back to select a model - never the display name, which can change.
-const WHISPER_MODEL_IDS: [&str; 3] = ["large-v3-turbo", "small", "base"];
+const WHISPER_MODEL_IDS: [&str; 3] = ["base", "small", "large-v3-turbo"];
 
 fn whisper_manifest_by_id(id: &str) -> Result<ModelManifest, AppError> {
     match id {
@@ -55,12 +55,12 @@ fn whisper_manifest_by_id(id: &str) -> Result<ModelManifest, AppError> {
 }
 
 /// Resolves the model to use for a transcription: the user's explicit choice
-/// if any and known, otherwise the default (`large-v3-turbo`, unchanged
-/// behavior for anyone who never sees or uses the picker).
+/// if any and known, otherwise the CPU-friendly default (`base`). Larger
+/// bundled models remain available as explicit quality choices.
 pub fn selected_whisper_manifest(model_id: Option<&str>) -> Result<ModelManifest, AppError> {
     match model_id {
         Some(id) => whisper_manifest_by_id(id),
-        None => manifest(),
+        None => base_manifest(),
     }
 }
 
@@ -112,7 +112,7 @@ pub enum ModelStatus {
 /// Uses only resources shipped with the application. Never accesses the network.
 /// Android assets are streamed into private storage because Whisper needs a disk path.
 pub fn ensure_model(app: &tauri::AppHandle) -> Result<ModelStatus, AppError> {
-    ensure_manifest(app, manifest()?)
+    ensure_manifest(app, base_manifest()?)
 }
 
 /// Same guarantee as `ensure_model`, generalized to any bundled model
@@ -260,7 +260,7 @@ mod tests {
     }
 
     #[test]
-    fn default_is_large_v3_turbo() {
+    fn large_v3_turbo_manifest_is_valid() {
         let model = manifest().unwrap();
         assert_eq!(model.file, "ggml-large-v3-turbo-q5_0.bin");
         assert_eq!(model.sha256.len(), 64);
@@ -270,7 +270,7 @@ mod tests {
     fn lists_all_three_bundled_whisper_models_with_valid_manifests() {
         let models = list_whisper_models().unwrap();
         let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
-        assert_eq!(ids, ["large-v3-turbo", "small", "base"]);
+        assert_eq!(ids, ["base", "small", "large-v3-turbo"]);
         for model in &models {
             assert!(model.size_mb > 0);
             assert!(!model.name.is_empty());
@@ -280,7 +280,7 @@ mod tests {
     #[test]
     fn selected_whisper_manifest_falls_back_to_default_when_unset() {
         let default = selected_whisper_manifest(None).unwrap();
-        assert_eq!(default.file, "ggml-large-v3-turbo-q5_0.bin");
+        assert_eq!(default.file, "ggml-base-q5_1.bin");
     }
 
     #[test]

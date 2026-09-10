@@ -25,6 +25,7 @@ struct RecordingState(Mutex<Option<ActiveRecording>>);
 struct ActiveRecording {
     handle: capture::session::RecordingHandle,
     processing_thread: std::thread::JoinHandle<()>,
+    telemetry_thread: std::thread::JoinHandle<()>,
     interview_id: i64,
 }
 
@@ -35,6 +36,35 @@ struct ActiveRecording {
 struct TranscriptionProgress {
     interview_id: i64,
     percent: i32,
+}
+
+#[derive(Serialize, Clone)]
+struct TaskProgress {
+    interview_id: i64,
+    task: &'static str,
+    stage: &'static str,
+    stage_label: &'static str,
+    percent: i32,
+}
+
+fn emit_task_progress(
+    app: &tauri::AppHandle,
+    interview_id: i64,
+    task: &'static str,
+    stage: &'static str,
+    stage_label: &'static str,
+    percent: i32,
+) {
+    let _ = app.emit(
+        "task-progress",
+        TaskProgress {
+            interview_id,
+            task,
+            stage,
+            stage_label,
+            percent: percent.clamp(0, 100),
+        },
+    );
 }
 
 fn app_data_subdir(app: &tauri::AppHandle, name: &str) -> Result<std::path::PathBuf, AppError> {
@@ -81,6 +111,16 @@ fn import_interview(
 fn list_interviews(db: tauri::State<DbState>) -> Result<Vec<db::models::Interview>, AppError> {
     let conn = lock_db(&db)?;
     db::interviews::list(&conn)
+}
+
+#[tauri::command]
+fn list_recent_segments(
+    db: tauri::State<DbState>,
+    interview_id: i64,
+    limit: usize,
+) -> Result<Vec<db::models::Segment>, AppError> {
+    let conn = lock_db(&db)?;
+    db::segments::list_recent_for_interview(&conn, interview_id, limit)
 }
 
 #[tauri::command]
@@ -182,6 +222,14 @@ fn recover_interview_local(
     interview_id: i64,
     model_id: Option<String>,
 ) -> Result<db::models::InterviewDetail, AppError> {
+    emit_task_progress(
+        app,
+        interview_id,
+        "recovery",
+        "model",
+        "Vérification de l’enregistrement",
+        5,
+    );
     let audio_dir = app_data_subdir(app, "audio")?;
     let conn = lock_db(db)?;
     let inspection = recovery::inspect(&conn, interview_id, &audio_dir)?;
@@ -190,12 +238,28 @@ fn recover_interview_local(
     drop(conn);
 
     let pcm = audio::decode::decode_to_mono_pcm16k(Path::new(&interview.audio_path))?;
+    emit_task_progress(
+        app,
+        interview_id,
+        "recovery",
+        "decode",
+        "Préparation de l’audio restant",
+        18,
+    );
     let transcription::model::ModelStatus::Ready { path, .. } =
         transcription::model::ensure_manifest(
             app,
             transcription::model::selected_whisper_manifest(model_id.as_deref())?,
         )?;
     let transcriber = transcription::whisper_cpp::WhisperCppTranscriber::load(Path::new(&path))?;
+    emit_task_progress(
+        app,
+        interview_id,
+        "recovery",
+        "whisper",
+        "Récupération de la transcription",
+        24,
+    );
     let recovered = recovery::transcribe_remainder(
         &transcriber,
         &pcm,
@@ -203,10 +267,26 @@ fn recover_interview_local(
         inspection.last_stable_end_ms,
         &existing,
     )?;
+    emit_task_progress(
+        app,
+        interview_id,
+        "recovery",
+        "save",
+        "Sauvegarde des segments récupérés",
+        96,
+    );
 
     let conn = lock_db(db)?;
     recovery::insert_as_uncertain(&conn, interview_id, recovered)?;
     db::interviews::update_status(&conn, interview_id, "transcribed", None)?;
+    emit_task_progress(
+        app,
+        interview_id,
+        "recovery",
+        "done",
+        "Récupération terminée",
+        100,
+    );
     db::get_detail(&conn, interview_id)
 }
 
@@ -290,6 +370,15 @@ fn transcribe_local(
     expected_speaker_count: Option<usize>,
     model_id: Option<String>,
 ) -> Result<db::models::InterviewDetail, AppError> {
+    diagnostics::log("INFO", "transcription: verification du modele");
+    emit_task_progress(
+        app,
+        interview_id,
+        "transcription",
+        "model",
+        "Vérification du modèle local",
+        5,
+    );
     let mark_error = |err: AppError| -> AppError {
         if let Ok(conn) = db.0.lock() {
             let _ =
@@ -324,6 +413,15 @@ fn transcribe_local(
 
     let pcm = audio::decode::decode_to_mono_pcm16k(Path::new(&interview.audio_path))
         .map_err(mark_error)?;
+    diagnostics::log("INFO", "transcription: audio decode");
+    emit_task_progress(
+        app,
+        interview_id,
+        "transcription",
+        "decode",
+        "Décodage et normalisation audio",
+        18,
+    );
 
     let transcriber =
         transcription::whisper_cpp::WhisperCppTranscriber::load(Path::new(&model_path))
@@ -338,8 +436,25 @@ fn transcribe_local(
                     percent,
                 },
             );
+            emit_task_progress(
+                &progress_app,
+                interview_id,
+                "transcription",
+                "whisper",
+                "Transcription Whisper",
+                18 + (percent.clamp(0, 100) * 62 / 100),
+            );
         })
         .map_err(mark_error)?;
+    diagnostics::log("INFO", "transcription: inference Whisper terminee");
+    emit_task_progress(
+        app,
+        interview_id,
+        "transcription",
+        "speakers",
+        "Analyse des intervenants",
+        82,
+    );
 
     let conn = lock_db(db)?;
     let (speaker_ids, uncertain_flags) = assign_speakers(
@@ -353,6 +468,14 @@ fn transcribe_local(
     .map_err(mark_error)?;
 
     let new_segments = transcription::to_new_segments(raw_segments, &speaker_ids);
+    emit_task_progress(
+        app,
+        interview_id,
+        "transcription",
+        "save",
+        "Enregistrement des segments",
+        96,
+    );
     let inserted_ids = db::segments::insert_batch(&conn, interview_id, &new_segments)?;
     // insert_batch always writes 'raw'; segments the clusterer flagged as an
     // uncertain speaker match get promoted to 'uncertain' rather than forcing
@@ -363,6 +486,15 @@ fn transcribe_local(
         }
     }
     db::interviews::update_status(&conn, interview_id, "transcribed", None)?;
+    diagnostics::log("INFO", "transcription: traitement termine");
+    emit_task_progress(
+        app,
+        interview_id,
+        "transcription",
+        "done",
+        "Transcription terminée",
+        100,
+    );
     db::get_detail(&conn, interview_id)
 }
 
@@ -499,14 +631,23 @@ fn start_recording_local(
 
     diagnostics::log("INFO", "ouverture du peripherique audio");
     let wav_path = Path::new(&interview.audio_path).to_path_buf();
-    let (event_tx, event_rx) = std::sync::mpsc::channel();
-    let handle = capture::session::start(device_name, wav_path, event_tx).inspect_err(|err| {
-        diagnostics::log("ERROR", &format!("echec d'ouverture du microphone: {err}"));
-        if let Ok(conn) = lock_db(&db) {
-            let _ =
-                db::interviews::update_status(&conn, interview.id, "error", Some(&err.to_string()));
-        }
-    })?;
+    // Eight bounded 15-second chunks cap the live-transcription backlog at
+    // roughly two minutes. The WAV keeps being written even if inference
+    // falls behind, so multi-hour recordings cannot consume unbounded RAM.
+    let (event_tx, event_rx) = std::sync::mpsc::sync_channel(32);
+    let (chunk_tx, chunk_rx) = std::sync::mpsc::sync_channel(8);
+    let handle =
+        capture::session::start(device_name, wav_path, event_tx, chunk_tx).inspect_err(|err| {
+            diagnostics::log("ERROR", &format!("echec d'ouverture du microphone: {err}"));
+            if let Ok(conn) = lock_db(&db) {
+                let _ = db::interviews::update_status(
+                    &conn,
+                    interview.id,
+                    "error",
+                    Some(&err.to_string()),
+                );
+            }
+        })?;
     diagnostics::log("INFO", "microphone ouvert, capture demarree");
 
     let processing_app = app.clone();
@@ -518,8 +659,21 @@ fn start_recording_local(
             model_path,
             diarization_model_path,
             expected_speaker_count,
-            event_rx,
+            chunk_rx,
         );
+    });
+    let telemetry_app = app.clone();
+    let telemetry_thread = std::thread::spawn(move || {
+        for event in event_rx {
+            match event {
+                capture::session::SessionEvent::LevelUpdate { rms } => {
+                    let _ = telemetry_app.emit("recording-level", rms);
+                }
+                capture::session::SessionEvent::Error(message) => {
+                    let _ = telemetry_app.emit("recording-error", message);
+                }
+            }
+        }
     });
 
     let mut guard = recording
@@ -529,6 +683,7 @@ fn start_recording_local(
     *guard = Some(ActiveRecording {
         handle,
         processing_thread,
+        telemetry_thread,
         interview_id: interview.id,
     });
 
@@ -590,11 +745,24 @@ async fn stop_recording(app: tauri::AppHandle) -> Result<db::models::InterviewDe
                 .take()
                 .ok_or_else(|| AppError::Audio("aucun enregistrement en cours".into()))?
         };
+        let lag_flag = active.handle.lag_flag();
         active.handle.stop();
         let _ = active.processing_thread.join();
+        let _ = active.telemetry_thread.join();
         let db = app.state::<DbState>();
         let conn = lock_db(&db)?;
-        db::interviews::update_status(&conn, active.interview_id, "transcribed", None)?;
+        if lag_flag.load(std::sync::atomic::Ordering::Relaxed) {
+            db::interviews::update_status(
+                &conn,
+                active.interview_id,
+                "transcribing",
+                Some(
+                    "La transcription en direct n'a pas suivi la capture. L'audio complet est conserve; utilisez Recuperer pour terminer.",
+                ),
+            )?;
+        } else {
+            db::interviews::update_status(&conn, active.interview_id, "transcribed", None)?;
+        }
         db::get_detail(&conn, active.interview_id)
     })
     .await
@@ -607,40 +775,32 @@ async fn stop_recording(app: tauri::AppHandle) -> Result<db::models::InterviewDe
 /// stays stable across the whole session, exactly like `transcribe_local`
 /// does for a whole file at once - the only difference is doing it one
 /// chunk at a time, offsetting timestamps by however much came before.
-fn consume_recording_events<I, OnLevel, ProcessChunk, OnUpdated, OnError>(
-    events: I,
-    mut on_level: OnLevel,
+fn consume_recording_chunks<I, ProcessChunk, OnUpdated, OnError>(
+    chunks: I,
     mut process_chunk: ProcessChunk,
     mut on_updated: OnUpdated,
     mut on_error: OnError,
 ) where
-    I: IntoIterator<Item = capture::session::SessionEvent>,
-    OnLevel: FnMut(f32),
+    I: IntoIterator<Item = Vec<f32>>,
     ProcessChunk: FnMut(i64, &[f32]) -> Result<(), AppError>,
     OnUpdated: FnMut(),
     OnError: FnMut(String),
 {
     let mut elapsed_ms = 0i64;
-    for event in events {
-        match event {
-            capture::session::SessionEvent::LevelUpdate { rms } => on_level(rms),
-            capture::session::SessionEvent::Error(message) => on_error(message),
-            capture::session::SessionEvent::ChunkReady { pcm } => {
-                if pcm.is_empty() {
-                    continue;
-                }
-                let chunk_duration_ms =
-                    (pcm.len() as i64 * 1000) / audio::decode::WHISPER_SAMPLE_RATE as i64;
-                match process_chunk(elapsed_ms, &pcm) {
-                    Ok(()) => on_updated(),
-                    Err(error) => on_error(error.to_string()),
-                }
-                // An erroneous chunk still occupied time in the saved audio.
-                // Advancing preserves timestamps for every later successful
-                // chunk instead of collapsing them onto the failed interval.
-                elapsed_ms += chunk_duration_ms;
-            }
+    for pcm in chunks {
+        if pcm.is_empty() {
+            continue;
         }
+        let chunk_duration_ms =
+            (pcm.len() as i64 * 1000) / audio::decode::WHISPER_SAMPLE_RATE as i64;
+        match process_chunk(elapsed_ms, &pcm) {
+            Ok(()) => on_updated(),
+            Err(error) => on_error(error.to_string()),
+        }
+        // An erroneous chunk still occupied time in the saved audio.
+        // Advancing preserves timestamps for every later successful
+        // chunk instead of collapsing them onto the failed interval.
+        elapsed_ms += chunk_duration_ms;
     }
 }
 
@@ -650,7 +810,7 @@ fn run_recording_processing(
     model_path: String,
     diarization_model_path: String,
     expected_speaker_count: Option<usize>,
-    events: std::sync::mpsc::Receiver<capture::session::SessionEvent>,
+    chunks: std::sync::mpsc::Receiver<Vec<f32>>,
 ) {
     let transcriber =
         match transcription::whisper_cpp::WhisperCppTranscriber::load(Path::new(&model_path)) {
@@ -661,11 +821,8 @@ fn run_recording_processing(
         Ok(assigner) => assigner,
         Err(err) => return report_recording_error(&app, interview_id, err),
     };
-    consume_recording_events(
-        events,
-        |rms| {
-            let _ = app.emit("recording-level", rms);
-        },
+    consume_recording_chunks(
+        chunks,
         |elapsed_ms, pcm| {
             process_recording_chunk(
                 &app,
@@ -693,6 +850,7 @@ fn process_recording_chunk(
     time_offset_ms: i64,
     pcm: &[f32],
 ) -> Result<(), AppError> {
+    diagnostics::log("INFO", "enregistrement: transcription d'un bloc audio");
     let raw_segments = transcriber.transcribe(pcm, None)?;
     if raw_segments.is_empty() {
         return Ok(());
@@ -720,6 +878,7 @@ fn process_recording_chunk(
             db::segments::mark_uncertain(&conn, *segment_id)?;
         }
     }
+    diagnostics::log("INFO", "enregistrement: bloc audio traite");
     Ok(())
 }
 
@@ -1036,6 +1195,7 @@ pub fn run() {
             application_status,
             import_interview,
             list_interviews,
+            list_recent_segments,
             list_recovery_candidates,
             inspect_recovery_candidate,
             keep_interrupted_as_is,
@@ -1086,16 +1246,14 @@ mod tests {
         ));
         let audio_evidence = b"saved audio evidence";
         std::fs::write(&audio_path, audio_evidence).unwrap();
-        let chunks = [1.0f32, 2.0, 3.0].map(|marker| capture::session::SessionEvent::ChunkReady {
-            pcm: vec![marker; audio::decode::WHISPER_SAMPLE_RATE as usize],
-        });
+        let chunks = [1.0f32, 2.0, 3.0]
+            .map(|marker| vec![marker; audio::decode::WHISPER_SAMPLE_RATE as usize]);
         let mut persisted_offsets = Vec::new();
         let mut errors = Vec::new();
         let mut updates = 0;
 
-        consume_recording_events(
+        consume_recording_chunks(
             chunks,
-            |_| {},
             |offset, pcm| {
                 if pcm[0] == 2.0 {
                     Err(AppError::Transcription("segment test invalide".into()))

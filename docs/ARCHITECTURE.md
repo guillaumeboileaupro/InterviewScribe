@@ -35,8 +35,9 @@ Le temps reel est une transcription incrementale avec une faible latence, pas un
 
 - Capture: `cpal` (verifie par compilation reelle et par un test materiel reel sur ce poste, backend ALSA sous Linux, Oboe sous Android). `cpal::Stream` n'est pas `Send`: il vit sur un thread dedie (`capture::session::run_capture_thread`), controle depuis le reste de l'application uniquement via un canal de messages (pause/reprise/arret) - jamais deplace entre threads.
 - VAD: seuil d'energie RMS avec hysteresis haut/bas et un delai de tolerance ("hangover") avant de considerer la parole terminee, pour ne pas couper un mot sur un bref creux (`capture::vad`). Pas de modele ML: suffisant pour trouver les silences qui delimitent un bloc, pas pour une detection fine mot-a-mot.
-- Decoupage/stabilisation: pas de vrai flux incremental - `whisper-rs` n'expose aucune API de resultat partiel (`state.full()` traite toujours un buffer complet). A la place (`capture::chunker`), l'audio s'accumule jusqu'a un silence suffisant apres de la parole, ou un plafond de duree de securite (30s) en l'absence de silence; le bloc ferme est alors transcrit et diarise d'un coup, comme un mini pipeline a posteriori. Un seul `diarization::Clusterer` vit pour toute la session (pas un par bloc), pour que l'identite des locuteurs reste stable dans la duree - point d'attention principal en reutilisant le code de la Phase 3. Pendant qu'un bloc s'accumule sans silence, l'interface affiche un indicateur "transcription en cours" plutot qu'un vrai texte provisoire mot-a-mot: interpretation pragmatique de "texte provisoire puis consolidation" qui evite la complexite d'un moteur de diff incremental.
-- Sauvegarde incrementale: `hound` ecrit un WAV valide en continu dans le stockage prive de l'app (meme repertoire que les fichiers importes en Phase 1). Le WAV partiel est relisible et les metadonnees/segments stabilises survivent a la reouverture de SQLite. Limite constatee lors de l'ajout du test transversal de recuperation: la reprise applicative n'est pas encore cablee, car le pipeline a posteriori refuse actuellement un entretien reste au statut `transcribing`. La recuperation des donnees est donc prouvee, pas encore le parcours utilisateur complet de reprise.
+- Decoupage/stabilisation: pas de vrai flux incremental - `whisper-rs` n'expose aucune API de resultat partiel (`state.full()` traite toujours un buffer complet). A la place (`capture::chunker`), l'audio s'accumule jusqu'a un silence suffisant apres de la parole, ou un plafond de duree de securite (15s) en l'absence de silence; le bloc ferme est alors transcrit et diarise d'un coup, comme un mini pipeline a posteriori. Un seul `diarization::Clusterer` vit pour toute la session (pas un par bloc), pour que l'identite des locuteurs reste stable dans la duree - point d'attention principal en reutilisant le code de la Phase 3. Pendant qu'un bloc s'accumule sans silence, l'interface affiche un indicateur "transcription en cours" plutot qu'un vrai texte provisoire mot-a-mot: interpretation pragmatique de "texte provisoire puis consolidation" qui evite la complexite d'un moteur de diff incremental.
+- Endurance: les blocs a transcrire utilisent une file bornee a huit elements (environ deux minutes au plafond de 15s), separee des evenements legers de niveau audio. Une inference plus lente que la capture ne peut donc plus faire croitre la RAM pendant plusieurs heures. En cas de saturation, le WAV continue d'etre ecrit; la session reste `transcribing` et l'interface propose la recuperation du suffixe manquant. La vue en direct ne recharge que les 100 derniers segments, et l'editeur rend les longs entretiens par lots de 200 pour eviter un DOM demesure.
+- Sauvegarde incrementale: `hound` ecrit un WAV valide en continu dans le stockage prive de l'app (meme repertoire que les fichiers importes en Phase 1). Le WAV partiel est relisible et les metadonnees/segments stabilises survivent a la reouverture de SQLite. Une session interrompue ou dont la transcription en direct a pris du retard reste recuperable depuis la bibliotheque; seuls le suffixe instable et les segments manquants sont retraites.
 - Pause/reprise/changement de peripherique: la pause utilise `Stream::pause()`/`play()` de cpal (pas de fermeture/reouverture, plus simple et plus rapide) tant que le peripherique ne change pas; un changement de peripherique explicite a la reprise reconstruit un nouveau flux (et clot proprement le bloc en cours d'accumulation sur l'ancien peripherique plutot que de le perdre silencieusement). Un peripherique disparu remonte une erreur claire au frontend, sans bascule automatique.
 - Validation materielle reelle (pas seulement des tests synthetiques): `capture::session::tests::real_microphone_capture_produces_a_valid_recoverable_wav` (`#[ignore]`, execute manuellement le 07/09/2026 sur ce poste, peripherique ALSA `ALC3204 Analog`) ouvre le peripherique par defaut, capture ~4s, verifie qu'au moins un evenement de niveau reel arrive, teste pause/reprise, puis relit le WAV produit avec `audio::decode::decode_to_mono_pcm16k` - la meme fonction que le pipeline a posteriori. Preuve concrete, pas juste theorique, que la recuperation apres interruption fonctionne.
 - Limites non couvertes par cette implementation: aucune mesure de latence/consommation avec de la parole reelle (necessite un humain qui parle dans le microphone, impossible a simuler dans l'environnement de developpement utilise ici); pas de test de changement de peripherique sur materiel reel (un seul microphone disponible sur ce poste); support Android non tente (contrairement a `whisper-rs`, deja compile et teste sur Android - voir "Strategie Whisper"). Ces points restent a couvrir avant de considerer la Phase 4 entierement close (voir `docs/ROADMAP.md`).
@@ -197,20 +198,17 @@ n'est jamais assimilee a zero.
 
 ## Modele fourni avec l’application
 
-Le modele par defaut est **Whisper Large v3 Turbo multilingue quantifie Q5_0**
-(574 041 195 octets, environ 575 Mo). Il remplace Small. Sa revision distante,
-sa taille et son empreinte SHA-256 sont epinglees dans
-`src-tauri/resources/models/manifest.json`. La licence MIT de Whisper est livree
-avec le modele.
+Le profil par defaut est **Whisper Base multilingue quantifie Q5_1**. Small et
+Large v3 Turbo Q5_0 restent fournis et selectionnables explicitement. Ce choix
+evite qu'une courte transcription paraisse bloquee sur une machine CPU: lors du
+diagnostic du 10 septembre 2026, Base a traite 26,9 s d'audio en 13,0 s, tandis
+que Large v3 Turbo depassait 90 s sur le meme poste. Les revisions, tailles et
+empreintes SHA-256 sont epinglees dans les manifestes de
+`src-tauri/resources/models/`. La licence MIT de Whisper est livree avec eux.
 
-Turbo est le variant qu'OpenAI a specifiquement concu pour etre rapide tout en
-restant multilingue: d'apres le depot officiel OpenAI, Turbo tourne environ
-8x plus vite que Large (809M parametres contre 1550M), la ou les variants
-plus petits et plus rapides (Tiny, Base, Small) sont limites a l'anglais.
-C'est le compromis vitesse/qualite retenu pour ce projet, confirme lors de
-l'echange avec l'utilisateur du 06/09/2026 ("je veux juste une version locale
-qui tourne vite et assez bonne") -> decision de garder Large v3 Turbo plutot
-que de redescendre vers Small.
+Tous les profils fournis sont multilingues. Base privilegie la reactivite;
+Small et Large v3 Turbo permettent de privilegier la precision lorsque le temps
+de calcul et la memoire disponibles le permettent.
 
 Les paquets Windows, Linux et Android incluent le modele dans les ressources
 Tauri. L’application ne telecharge aucun modele : le producteur du paquet lance

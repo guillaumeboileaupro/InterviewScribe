@@ -105,6 +105,13 @@ export function listInterviews(): Promise<Interview[]> {
   return invoke("list_interviews");
 }
 
+export function listRecentSegments(
+  interviewId: number,
+  limit = 100,
+): Promise<Segment[]> {
+  return invoke("list_recent_segments", { interviewId, limit });
+}
+
 export function listRecoveryCandidates(): Promise<Interview[]> {
   return invoke("list_recovery_candidates");
 }

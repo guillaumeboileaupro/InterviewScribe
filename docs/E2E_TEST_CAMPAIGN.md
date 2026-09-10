@@ -1,4 +1,4 @@
-# Campagne de test E2E - v0.1.3
+# Campagne de test E2E - v0.1.4
 
 ## Objectif et mode d'emploi
 
@@ -15,7 +15,7 @@ Ne rien deviner ni supposer : si un écran ne correspond pas à la
 description, cochez "Autre" et décrivez ce que vous voyez.
 
 **Prérequis** : téléchargez le paquet correspondant à votre plateforme depuis
-la [page Releases](https://github.com/guillaumeboileaupro/InterviewScribe/releases/tag/v0.1.3)
+la [page Releases](https://github.com/guillaumeboileaupro/InterviewScribe/releases/tag/v0.1.4)
 et installez-le (voir le README pour le détail par plateforme). Notez ici
 avant de commencer :
 

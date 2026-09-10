@@ -16,6 +16,7 @@ import {
   listAvailableModels,
   listInputDevices,
   listInterviews,
+  listRecentSegments,
   listRecoveryCandidates,
   mergeSpeakers,
   pauseRecording,
@@ -69,11 +70,71 @@ const example = [
 ];
 type Page = "library" | "example" | "settings" | "prepare" | "interview";
 
+type TaskProgress = {
+  interview_id: number;
+  task: string;
+  stage: string;
+  stage_label: string;
+  percent: number;
+};
+
+const TRANSCRIPTION_STAGES = [
+  { id: "model", label: "Modèle local", start: 0, end: 8 },
+  { id: "decode", label: "Préparation audio", start: 8, end: 18 },
+  { id: "whisper", label: "Transcription Whisper", start: 18, end: 80 },
+  { id: "speakers", label: "Intervenants", start: 80, end: 96 },
+  { id: "save", label: "Sauvegarde", start: 96, end: 100 },
+] as const;
+
+function ProgressPanel({ progress }: { progress: TaskProgress }) {
+  return (
+    <section className="progressPanel" aria-label="Avancement du traitement">
+      <div className="progressSummary" role="status" aria-live="polite">
+        <strong>{progress.stage_label}</strong>
+        <span>{progress.percent}%</span>
+      </div>
+      <progress
+        className="overallProgress"
+        value={progress.percent}
+        max={100}
+        aria-label={`Avancement global : ${progress.percent}%`}
+      />
+      <div className="progressStages">
+        {TRANSCRIPTION_STAGES.map((stage) => {
+          const value = Math.max(
+            0,
+            Math.min(
+              100,
+              ((progress.percent - stage.start) * 100) /
+                (stage.end - stage.start),
+            ),
+          );
+          return (
+            <div className="progressStage" key={stage.id}>
+              <div>
+                <span>{stage.label}</span>
+                <span>{Math.round(value)}%</span>
+              </div>
+              <progress
+                value={value}
+                max={100}
+                aria-label={`${stage.label} : ${Math.round(value)}%`}
+              />
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function formatTimestamp(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  const short = `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  return hours > 0 ? `${String(hours).padStart(2, "0")}:${short}` : short;
 }
 
 export default function App() {
@@ -124,7 +185,7 @@ export default function App() {
   const [inputDevices, setInputDevices] = useState<string[]>([]);
   const [selectedDevice, setSelectedDevice] = useState("");
   const [recordingStatus, setRecordingStatus] = useState<
-    "idle" | "recording" | "paused"
+    "idle" | "recording" | "paused" | "stopping"
   >("idle");
   const [recordingInterviewId, setRecordingInterviewId] = useState<
     number | null
@@ -135,9 +196,9 @@ export default function App() {
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const recordingInterviewIdRef = useRef<number | null>(null);
 
-  const [transcriptionPercent, setTranscriptionPercent] = useState<
-    number | null
-  >(null);
+  const [taskProgress, setTaskProgress] = useState<TaskProgress | null>(null);
+  const [activeExport, setActiveExport] = useState<string | null>(null);
+  const [visibleSegmentCount, setVisibleSegmentCount] = useState(200);
   const transcribingInterviewIdRef = useRef<number | null>(null);
 
   const [diagnosticsText, setDiagnosticsText] = useState("");
@@ -236,30 +297,28 @@ export default function App() {
     });
     const unlistenSegments = listen<number>("segments-updated", (event) => {
       if (event.payload !== recordingInterviewIdRef.current) return;
-      getInterview(event.payload)
-        .then((detail) => setRecordingSegments(detail.segments))
+      listRecentSegments(event.payload)
+        .then(setRecordingSegments)
         .catch(() => {});
     });
     const unlistenError = listen<string>("recording-error", (event) => {
       setRecordingError(event.payload);
     });
-    const unlistenTranscriptionProgress = listen<{
-      interview_id: number;
-      percent: number;
-    }>("transcription-progress", (event) => {
-      if (event.payload.interview_id !== transcribingInterviewIdRef.current)
-        return;
-      setTranscriptionPercent(event.payload.percent);
-    });
+    const unlistenTaskProgress = listen<TaskProgress>(
+      "task-progress",
+      (event) => {
+        if (event.payload.interview_id !== transcribingInterviewIdRef.current)
+          return;
+        setTaskProgress(event.payload);
+      },
+    );
     return () => {
       // Fire-and-forget: nothing meaningful to do if unregistering a
       // listener fails during teardown (e.g. the window is already closing).
       unlistenLevel.then((unlisten) => unlisten()).catch(() => {});
       unlistenSegments.then((unlisten) => unlisten()).catch(() => {});
       unlistenError.then((unlisten) => unlisten()).catch(() => {});
-      unlistenTranscriptionProgress
-        .then((unlisten) => unlisten())
-        .catch(() => {});
+      unlistenTaskProgress.then((unlisten) => unlisten()).catch(() => {});
     };
   }, []);
 
@@ -274,6 +333,7 @@ export default function App() {
   const openInterview = (interviewId: number) => {
     getInterview(interviewId)
       .then((detail) => {
+        setVisibleSegmentCount(200);
         setCurrentInterview(detail);
         setPage("interview");
       })
@@ -316,10 +376,21 @@ export default function App() {
   const handleRecovery = async (interviewId: number, keepOnly: boolean) => {
     setRecoveryBusyId(interviewId);
     setRecoveryError(null);
+    if (!keepOnly) {
+      transcribingInterviewIdRef.current = interviewId;
+      setTaskProgress({
+        interview_id: interviewId,
+        task: "recovery",
+        stage: "model",
+        stage_label: "Préparation de la récupération",
+        percent: 0,
+      });
+    }
     try {
       const detail = keepOnly
         ? await keepInterruptedAsIs(interviewId)
         : await recoverInterview(interviewId, selectedModelId || undefined);
+      setVisibleSegmentCount(200);
       setCurrentInterview(detail);
       setPage("interview");
       refreshInterviews();
@@ -327,6 +398,8 @@ export default function App() {
       setRecoveryError(String(err));
     } finally {
       setRecoveryBusyId(null);
+      transcribingInterviewIdRef.current = null;
+      setTaskProgress(null);
     }
   };
 
@@ -359,7 +432,13 @@ export default function App() {
       refreshInterviews();
       const parsedCount = Number.parseInt(expectedSpeakerCount, 10);
       transcribingInterviewIdRef.current = interview.id;
-      setTranscriptionPercent(0);
+      setTaskProgress({
+        interview_id: interview.id,
+        task: "transcription",
+        stage: "model",
+        stage_label: "Préparation du traitement local",
+        percent: 0,
+      });
       const detail = await transcribeInterview(
         interview.id,
         Number.isFinite(parsedCount) && parsedCount > 0
@@ -367,6 +446,7 @@ export default function App() {
           : undefined,
         selectedModelId || undefined,
       );
+      setVisibleSegmentCount(200);
       setCurrentInterview(detail);
       setPage("interview");
     } catch (err) {
@@ -375,7 +455,7 @@ export default function App() {
       refreshInterviews();
       setPrepareBusy(false);
       transcribingInterviewIdRef.current = null;
-      setTranscriptionPercent(null);
+      setTaskProgress(null);
     }
   };
 
@@ -387,6 +467,7 @@ export default function App() {
     });
     if (!destination) return;
     try {
+      setActiveExport(format.toUpperCase());
       await exportInterview(
         currentInterview.interview.id,
         format,
@@ -396,6 +477,8 @@ export default function App() {
       );
     } catch (err) {
       setPrepareError(String(err));
+    } finally {
+      setActiveExport(null);
     }
   };
 
@@ -406,6 +489,7 @@ export default function App() {
     });
     if (!destination) return;
     try {
+      setActiveExport("DOC");
       await exportInterviewDoc(
         currentInterview.interview.id,
         timestamps,
@@ -414,6 +498,8 @@ export default function App() {
       );
     } catch (err) {
       setPrepareError(String(err));
+    } finally {
+      setActiveExport(null);
     }
   };
 
@@ -636,6 +722,9 @@ export default function App() {
 
   const handleStopRecording = async () => {
     breadcrumb('clic "Arreter et terminer"');
+    if (recordingStatus === "stopping") return;
+    setRecordingStatus("stopping");
+    setRecordingError(null);
     try {
       const detail = await stopRecording();
       setRecordingStatus("idle");
@@ -643,10 +732,20 @@ export default function App() {
       setRecordingSegments([]);
       setRecordingSeconds(0);
       refreshInterviews();
-      setCurrentInterview(detail);
-      setPage("interview");
+      if (detail.interview.status === "transcribing") {
+        setPrepareError(
+          detail.interview.error_message ??
+            "L’audio est sauvegardé. Terminez la transcription depuis la bibliothèque.",
+        );
+        setPage("library");
+      } else {
+        setVisibleSegmentCount(200);
+        setCurrentInterview(detail);
+        setPage("interview");
+      }
     } catch (err) {
       setRecordingError(String(err));
+      setRecordingStatus("paused");
     }
   };
 
@@ -739,6 +838,9 @@ export default function App() {
             <div className="notice" role="alert">
               {prepareError}
             </div>
+          )}
+          {recoveryBusyId !== null && taskProgress && (
+            <ProgressPanel progress={taskProgress} />
           )}
           {page === "library" && (
             <>
@@ -1080,136 +1182,164 @@ export default function App() {
                 {currentInterview.segments.length === 0 ? (
                   <p className="muted">Aucun segment pour le moment.</p>
                 ) : (
-                  currentInterview.segments.map((segment) => {
-                    const isEdited = segment.current_text !== segment.raw_text;
-                    const diffParts = cleanupDiffs[segment.id];
-                    const isPlaying =
-                      audioCurrentMs >= segment.start_ms &&
-                      audioCurrentMs < segment.end_ms;
-                    return (
-                      <article
-                        className={
-                          isPlaying ? "segment segmentPlaying" : "segment"
-                        }
-                        key={segment.id}
-                      >
-                        <div className="segmentMeta">
-                          {timestamps && (
-                            <button
-                              type="button"
-                              className="timestampSeek"
-                              onClick={() => seekToSegment(segment.start_ms)}
-                              aria-label={`Ecouter a partir de ${formatTimestamp(segment.start_ms)}`}
-                            >
-                              <time>{formatTimestamp(segment.start_ms)}</time>
-                            </button>
-                          )}
-                          <select
-                            className="speaker"
-                            aria-label="Locuteur du segment"
-                            value={segment.speaker_id ?? ""}
-                            onChange={(event) =>
-                              handleReassignSegment(
-                                segment.id,
-                                event.target.value
-                                  ? Number(event.target.value)
-                                  : null,
-                              )
+                  <>
+                    {currentInterview.segments
+                      .slice(0, visibleSegmentCount)
+                      .map((segment) => {
+                        const isEdited =
+                          segment.current_text !== segment.raw_text;
+                        const diffParts = cleanupDiffs[segment.id];
+                        const isPlaying =
+                          audioCurrentMs >= segment.start_ms &&
+                          audioCurrentMs < segment.end_ms;
+                        return (
+                          <article
+                            className={
+                              isPlaying ? "segment segmentPlaying" : "segment"
                             }
+                            key={segment.id}
                           >
-                            <option value="">Sans locuteur</option>
-                            {currentInterview.speakers.map((candidate) => (
-                              <option key={candidate.id} value={candidate.id}>
-                                {candidate.display_name ?? candidate.label}
-                              </option>
-                            ))}
-                          </select>
-                          {segment.status === "uncertain" && (
-                            <span
-                              className="muted"
-                              title="Confiance faible sur l'attribution du locuteur"
-                            >
-                              incertain
-                            </span>
-                          )}
-                        </div>
-                        {editingSegmentId === segment.id ? (
-                          <>
-                            <textarea
-                              aria-label="Texte du segment"
-                              value={draftText}
-                              onChange={(event) =>
-                                setDraftText(event.target.value)
-                              }
-                              rows={3}
-                              style={{ width: "100%" }}
-                            />
-                            <div className="buttonRow">
-                              <button
-                                className="primary"
-                                onClick={saveEditingSegment}
+                            <div className="segmentMeta">
+                              {timestamps && (
+                                <button
+                                  type="button"
+                                  className="timestampSeek"
+                                  onClick={() =>
+                                    seekToSegment(segment.start_ms)
+                                  }
+                                  aria-label={`Ecouter a partir de ${formatTimestamp(segment.start_ms)}`}
+                                >
+                                  <time>
+                                    {formatTimestamp(segment.start_ms)}
+                                  </time>
+                                </button>
+                              )}
+                              <select
+                                className="speaker"
+                                aria-label="Locuteur du segment"
+                                value={segment.speaker_id ?? ""}
+                                onChange={(event) =>
+                                  handleReassignSegment(
+                                    segment.id,
+                                    event.target.value
+                                      ? Number(event.target.value)
+                                      : null,
+                                  )
+                                }
                               >
-                                Enregistrer
-                              </button>
-                              <button
-                                className="secondary"
-                                onClick={cancelEditingSegment}
-                              >
-                                Annuler la saisie
-                              </button>
+                                <option value="">Sans locuteur</option>
+                                {currentInterview.speakers.map((candidate) => (
+                                  <option
+                                    key={candidate.id}
+                                    value={candidate.id}
+                                  >
+                                    {candidate.display_name ?? candidate.label}
+                                  </option>
+                                ))}
+                              </select>
+                              {segment.status === "uncertain" && (
+                                <span
+                                  className="muted"
+                                  title="Confiance faible sur l'attribution du locuteur"
+                                >
+                                  incertain
+                                </span>
+                              )}
                             </div>
-                          </>
-                        ) : (
-                          <>
-                            {showCleaned && diffParts ? (
-                              <p>
-                                {diffParts.map((part, index) =>
-                                  part.kept ? (
-                                    <span key={index}>{part.text}</span>
-                                  ) : (
-                                    <del
-                                      key={index}
-                                      className="removedSpan"
-                                      title={part.reason ?? undefined}
-                                    >
-                                      {part.text}
-                                    </del>
-                                  ),
-                                )}
-                              </p>
+                            {editingSegmentId === segment.id ? (
+                              <>
+                                <textarea
+                                  aria-label="Texte du segment"
+                                  value={draftText}
+                                  onChange={(event) =>
+                                    setDraftText(event.target.value)
+                                  }
+                                  rows={3}
+                                  style={{ width: "100%" }}
+                                />
+                                <div className="buttonRow">
+                                  <button
+                                    className="primary"
+                                    onClick={saveEditingSegment}
+                                  >
+                                    Enregistrer
+                                  </button>
+                                  <button
+                                    className="secondary"
+                                    onClick={cancelEditingSegment}
+                                  >
+                                    Annuler la saisie
+                                  </button>
+                                </div>
+                              </>
                             ) : (
-                              <p>
-                                {showCleaned
-                                  ? segment.current_text
-                                  : segment.raw_text}
-                              </p>
+                              <>
+                                {showCleaned && diffParts ? (
+                                  <p>
+                                    {diffParts.map((part, index) =>
+                                      part.kept ? (
+                                        <span key={index}>{part.text}</span>
+                                      ) : (
+                                        <del
+                                          key={index}
+                                          className="removedSpan"
+                                          title={part.reason ?? undefined}
+                                        >
+                                          {part.text}
+                                        </del>
+                                      ),
+                                    )}
+                                  </p>
+                                ) : (
+                                  <p>
+                                    {showCleaned
+                                      ? segment.current_text
+                                      : segment.raw_text}
+                                  </p>
+                                )}
+                                <div className="buttonRow">
+                                  <button
+                                    className="textButton"
+                                    onClick={() => startEditingSegment(segment)}
+                                  >
+                                    Modifier
+                                  </button>
+                                  <button
+                                    className="textButton"
+                                    onClick={() => handleCleanup(segment.id)}
+                                  >
+                                    Nettoyer
+                                  </button>
+                                  <button
+                                    className="textButton"
+                                    disabled={!isEdited}
+                                    onClick={() => handleUndo(segment.id)}
+                                  >
+                                    Annuler
+                                  </button>
+                                </div>
+                              </>
                             )}
-                            <div className="buttonRow">
-                              <button
-                                className="textButton"
-                                onClick={() => startEditingSegment(segment)}
-                              >
-                                Modifier
-                              </button>
-                              <button
-                                className="textButton"
-                                onClick={() => handleCleanup(segment.id)}
-                              >
-                                Nettoyer
-                              </button>
-                              <button
-                                className="textButton"
-                                disabled={!isEdited}
-                                onClick={() => handleUndo(segment.id)}
-                              >
-                                Annuler
-                              </button>
-                            </div>
-                          </>
-                        )}
-                      </article>
-                    );
-                  })
+                          </article>
+                        );
+                      })}
+                    {visibleSegmentCount < currentInterview.segments.length && (
+                      <div className="loadMoreSegments">
+                        <p className="muted">
+                          {visibleSegmentCount} segments affichés sur{" "}
+                          {currentInterview.segments.length}
+                        </p>
+                        <button
+                          className="secondary"
+                          onClick={() =>
+                            setVisibleSegmentCount((count) => count + 200)
+                          }
+                        >
+                          Afficher 200 segments supplémentaires
+                        </button>
+                      </div>
+                    )}
+                  </>
                 )}
               </section>
               <section className="settingsPanel">
@@ -1293,7 +1423,7 @@ export default function App() {
               </section>
               <section className="settingsPanel">
                 <h2>Export</h2>
-                <div className="buttonRow">
+                <div className="buttonRow" aria-busy={activeExport !== null}>
                   <button
                     className="secondary"
                     onClick={() => handleExport("txt")}
@@ -1344,6 +1474,15 @@ export default function App() {
                     Exporter en DOC
                   </button>
                 </div>
+                {activeExport && (
+                  <div className="compactProgress" role="status">
+                    <div>
+                      <strong>Création de l’export {activeExport}</strong>
+                      <span>Écriture locale en cours…</span>
+                    </div>
+                    <progress aria-label={`Export ${activeExport} en cours`} />
+                  </div>
+                )}
                 {!docAvailable && (
                   <p className="muted">
                     Export DOC indisponible : LibreOffice n’est pas installé sur
@@ -1430,13 +1569,8 @@ export default function App() {
                         ? "Transcription en cours…"
                         : "Choisir un fichier audio"}
                     </button>
-                    {prepareBusy && transcriptionPercent !== null && (
-                      <progress
-                        value={transcriptionPercent}
-                        max={100}
-                        style={{ width: "100%" }}
-                        aria-label="Progression de la transcription"
-                      />
+                    {prepareBusy && taskProgress && (
+                      <ProgressPanel progress={taskProgress} />
                     )}
                   </>
                 ) : (
@@ -1497,13 +1631,17 @@ export default function App() {
                         aria-label={
                           recordingStatus === "recording"
                             ? "Enregistrement en cours"
-                            : "Enregistrement en pause"
+                            : recordingStatus === "paused"
+                              ? "Enregistrement en pause"
+                              : "Finalisation de l’enregistrement"
                         }
                       >
                         <strong>
                           {recordingStatus === "recording"
                             ? "● Enregistrement"
-                            : "‖ Pause"}
+                            : recordingStatus === "paused"
+                              ? "‖ Pause"
+                              : "Finalisation et transcription…"}
                         </strong>{" "}
                         · {formatTimestamp(recordingSeconds * 1000)}
                         <div className="levelMeter" aria-hidden="true">
@@ -1513,6 +1651,38 @@ export default function App() {
                               width: `${Math.min(100, Math.round(recordingLevel * 400))}%`,
                             }}
                           />
+                        </div>
+                        <div className="recordingProgressGrid">
+                          <div className="progressStage">
+                            <div>
+                              <span>Audio sauvegardé</span>
+                              <span>en continu</span>
+                            </div>
+                            <progress aria-label="Sauvegarde audio en continu" />
+                          </div>
+                          <div className="progressStage">
+                            <div>
+                              <span>Transcription stabilisée</span>
+                              <span>
+                                {formatTimestamp(
+                                  recordingSegments.reduce(
+                                    (latest, segment) =>
+                                      Math.max(latest, segment.end_ms),
+                                    0,
+                                  ),
+                                )}
+                              </span>
+                            </div>
+                            <progress
+                              max={Math.max(1, recordingSeconds * 1000)}
+                              value={recordingSegments.reduce(
+                                (latest, segment) =>
+                                  Math.max(latest, segment.end_ms),
+                                0,
+                              )}
+                              aria-label="Part de l’enregistrement déjà transcrite"
+                            />
+                          </div>
                         </div>
                       </div>
                     )}
@@ -1542,14 +1712,15 @@ export default function App() {
                           Reprendre
                         </button>
                       )}
-                      {recordingStatus !== "idle" && (
-                        <button
-                          className="primary"
-                          onClick={handleStopRecording}
-                        >
-                          Arreter et terminer
-                        </button>
-                      )}
+                      {recordingStatus !== "idle" &&
+                        recordingStatus !== "stopping" && (
+                          <button
+                            className="primary"
+                            onClick={handleStopRecording}
+                          >
+                            Arreter et terminer
+                          </button>
+                        )}
                     </div>
 
                     {recordingStatus !== "idle" && (

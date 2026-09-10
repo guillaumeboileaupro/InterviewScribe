@@ -40,11 +40,15 @@ impl WhisperCppTranscriber {
     // model - see docs/TEST_IMPLEMENTATION_PLAN.md item 2.4, and real user
     // reports of the same on both installed .deb and .exe builds). `patience`
     // was never doing anything either way: whisper-rs documents it as "not
-    // implemented in whisper.cpp". Greedy{best_of: 5} keeps the same
-    // "consider 5 candidates" intent at the cost whisper.cpp is actually
-    // built for.
+    // implemented in whisper.cpp". A single greedy candidate is intentional
+    // here: `best_of` reruns the
+    // decoder and made short recordings look hung on CPU-only machines.
     fn base_params(language: Option<&str>) -> FullParams<'_, 'static> {
-        let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 5 });
+        let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+        let available_threads = std::thread::available_parallelism()
+            .map(|count| count.get())
+            .unwrap_or(1);
+        params.set_n_threads(available_threads.min(8) as i32);
         params.set_language(language);
         params.set_print_special(false);
         params.set_print_progress(false);

@@ -55,8 +55,10 @@ La bibliotheque charge les entretiens depuis SQLite et presente un etat vide en 
 exemples fictifs explicitement identifies. L’apercu de l’editeur est en lecture
 seule et permet de masquer les horodatages sans supprimer les donnees.
 La preparation permet d’importer un fichier et de le transcrire avec Whisper local.
-Le modele Large v3 Turbo est fourni avec l’application. Les reglages affichent
-son nom et son etat, sans bouton de telechargement. Un paquet incomplet affiche
+Les modeles Base, Small et Large v3 Turbo sont fournis avec l’application. Base
+est selectionne par defaut pour garder l’interface utilisable sur CPU; les deux
+profils plus precis restent explicites. Les reglages affichent leur nom et leur
+etat, sans bouton de telechargement. Un paquet incomplet affiche
 une erreur demandant de reinstaller la version complete.
 La capture microphone propose demarrage, pause, reprise et arret. La page de
 detail conserve le transcript comme contenu principal et ajoute un lecteur
@@ -64,8 +66,13 @@ audio compact ainsi qu'un commentaire optionnel. Les horodatages sont des
 boutons clavier qui lancent la lecture au debut du segment; le segment actif est
 signale par un fond discret en plus de la position visible du lecteur.
 
-La transcription a posteriori affiche une progression native 0-100 pendant le
-traitement. L'edition reversible, les intervenants et les exports TXT, Markdown,
+La transcription a posteriori affiche une progression globale et cinq etapes
+distinctes: modele, preparation audio, Whisper, intervenants et sauvegarde. La
+capture montre separement l'ecriture audio continue et la portion stabilisee;
+la recuperation et les exports ont egalement un etat de travail visible. Les
+horodatages passent en `HH:MM:SS` apres une heure. Les transcriptions longues
+sont rendues par lots de 200 segments, tandis que la vue en direct reste bornee
+aux 100 derniers segments. L'edition reversible, les intervenants et les exports TXT, Markdown,
 JSON, SRT, VTT, DOCX et PDF sont disponibles. Une validation visuelle du lecteur,
 de la progression et de la correlation segment/audio reste necessaire sur les
 applications installees et sur Android.

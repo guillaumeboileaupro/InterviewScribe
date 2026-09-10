@@ -75,6 +75,25 @@ pub fn list_for_interview(conn: &Connection, interview_id: i64) -> Result<Vec<Se
     Ok(out)
 }
 
+/// Returns only the tail needed by the live recording view. A multi-hour
+/// interview must not be serialized in full after every stabilized chunk.
+pub fn list_recent_for_interview(
+    conn: &Connection,
+    interview_id: i64,
+    limit: usize,
+) -> Result<Vec<Segment>, AppError> {
+    let bounded_limit = limit.clamp(1, 200) as i64;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT * FROM (SELECT {SELECT_SEGMENT_COLUMNS} FROM segment s WHERE s.interview_id = ?1 ORDER BY s.start_ms DESC LIMIT ?2) ORDER BY start_ms ASC"
+    ))?;
+    let rows = stmt.query_map(params![interview_id, bounded_limit], row_to_segment)?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
 pub fn get(conn: &Connection, segment_id: i64) -> Result<Segment, AppError> {
     conn.query_row(
         &format!("SELECT {SELECT_SEGMENT_COLUMNS} FROM segment s WHERE s.id = ?1"),
@@ -161,6 +180,29 @@ mod tests {
         assert_eq!(segments.len(), 2);
         assert_eq!(segments[0].raw_text, "First");
         assert_eq!(segments[1].raw_text, "Second");
+    }
+
+    #[test]
+    fn recent_list_is_bounded_and_remains_chronological() {
+        let (conn, interview_id, speaker_id) = setup();
+        let segments: Vec<NewSegment> = (0..250)
+            .map(|index| NewSegment {
+                speaker_id: Some(speaker_id),
+                start_ms: index * 1_000,
+                end_ms: index * 1_000 + 900,
+                raw_text: format!("Segment {index}"),
+                confidence: None,
+            })
+            .collect();
+        insert_batch(&conn, interview_id, &segments).unwrap();
+
+        let recent = list_recent_for_interview(&conn, interview_id, 100).unwrap();
+        assert_eq!(recent.len(), 100);
+        assert_eq!(recent.first().unwrap().start_ms, 150_000);
+        assert_eq!(recent.last().unwrap().start_ms, 249_000);
+
+        let capped = list_recent_for_interview(&conn, interview_id, usize::MAX).unwrap();
+        assert_eq!(capped.len(), 200);
     }
 
     #[test]
