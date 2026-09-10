@@ -1,4 +1,4 @@
-# Campagne de test E2E - v0.1.0
+# Campagne de test E2E - v0.1.3
 
 ## Objectif et mode d'emploi
 
@@ -15,7 +15,7 @@ Ne rien deviner ni supposer : si un écran ne correspond pas à la
 description, cochez "Autre" et décrivez ce que vous voyez.
 
 **Prérequis** : téléchargez le paquet correspondant à votre plateforme depuis
-la [page Releases](https://github.com/guillaumeboileaupro/InterviewScribe/releases/tag/v0.1.0)
+la [page Releases](https://github.com/guillaumeboileaupro/InterviewScribe/releases/tag/v0.1.3)
 et installez-le (voir le README pour le détail par plateforme). Notez ici
 avant de commencer :
 
@@ -64,7 +64,8 @@ avant de commencer :
 "Choisir un fichier audio" > sélectionner un fichier audio réel (voix
 parlée, quelques minutes).
 
-- [ ] Comme attendu : le bouton passe en "Transcription en cours…", puis l'entretien s'ouvre avec le texte transcrit et des horodatages.
+- [ ] Comme attendu : le bouton passe en "Transcription en cours…" avec une barre de progression qui avance visiblement, puis l'entretien s'ouvre avec le texte transcrit et des horodatages.
+- [ ] Le bouton passe en "Transcription en cours…" mais aucune barre de progression n'apparaît ou reste bloquée à 0%.
 - [ ] Rien ne se passe après avoir choisi le fichier (pas d'erreur, pas de changement).
 - [ ] Un message d'erreur apparaît (lequel ?).
 - [ ] La transcription se termine mais le texte est vide ou incohérent avec l'audio.
@@ -262,7 +263,38 @@ directement (croix / kill), sans cliquer "Arreter".
 
 ---
 
-## 8. Diagnostics
+## 8. Lecture audio et commentaire (nouveau v0.1.3)
+
+### AUD-01 - Lecture de l'audio
+
+**Étapes** : ouvrir un entretien transcrit, cliquer play sur le lecteur audio en haut de la page.
+
+- [ ] Comme attendu : l'audio se lit correctement, avec le son de l'enregistrement/import d'origine.
+- [ ] Aucun lecteur audio n'apparaît sur la page.
+- [ ] Le lecteur apparaît mais rien ne se joue (silence ou erreur).
+- [ ] Autre (décrire) :
+
+### AUD-02 - Corrélation transcription/audio
+
+**Étapes** : cliquer sur l'horodatage d'un segment au milieu de la transcription.
+
+- [ ] Comme attendu : la lecture audio saute à ce moment précis et démarre ; le segment en cours de lecture est visuellement surligné pendant qu'il joue.
+- [ ] Cliquer sur l'horodatage ne fait rien.
+- [ ] L'audio saute au bon endroit mais aucun segment n'est surligné.
+- [ ] Autre (décrire) :
+
+### NOTE-01 - Commentaire sur l'entretien
+
+**Étapes** : dans un entretien, section "Commentaire (optionnel)", taper un texte puis "Enregistrer le commentaire". Fermer l'entretien (retour à la liste) et le rouvrir.
+
+- [ ] Comme attendu : le commentaire est toujours présent après avoir rouvert l'entretien.
+- [ ] Le commentaire ne se sauvegarde pas / disparaît après réouverture.
+- [ ] Un message d'erreur apparaît en cliquant "Enregistrer".
+- [ ] Autre (décrire) :
+
+---
+
+## 9. Diagnostics
 
 ### DIA-01 - Panneau Diagnostics
 
@@ -282,7 +314,7 @@ directement (croix / kill), sans cliquer "Arreter".
 
 ---
 
-## 9. Android spécifique
+## 10. Android spécifique
 
 Avant AND-01, activer les options développeur et relever uniquement les données
 non sensibles suivantes (ne pas copier le numéro de série, l'IMEI ou le compte
