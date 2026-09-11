@@ -83,10 +83,12 @@ Critere de sortie: une APK signee, installable sur un appareil arm64-v8a, capabl
 
 ## Definition de termine
 
-Release candidate actuelle : `v0.1.4`. Son workflow doit produire et tester le
-paquet Debian, l'installateur NSIS Windows et l'APK arm64-v8a avant publication.
-Les resultats natifs mettront a jour les validations encore ouvertes de la
-section 7 dans `TEST_IMPLEMENTATION_PLAN.md`.
+Release candidate actuelle : `v0.2.0` (transcription a posteriori segmentee,
+arretable et reprenable - voir `docs/TRANSCRIPTION_RESUME_PLAN.md`). Son
+workflow doit produire et tester le paquet Debian, l'installateur NSIS
+Windows et l'APK arm64-v8a avant publication. Les resultats natifs mettront
+a jour les validations encore ouvertes de la section 7 dans
+`TEST_IMPLEMENTATION_PLAN.md`.
 
 Une tache n'est terminee que si elle comporte des tests pertinents, une documentation a jour, aucune donnee sensible dans les traces et une validation sur la plateforme concernee.
 
