@@ -559,8 +559,46 @@ complète) ; et aucun paquet construit ou validé sur les plateformes cibles.
 
 ## Publication
 
-La release `v0.1.4` reste en brouillon pendant cette évolution. Compte tenu
-de l'importance du changement de comportement, la livraison complète pourra
-être versionnée `v0.2.0`. La décision finale sera prise après l'audit des
-modifications, la compatibilité des données existantes et les validations
-de paquetage. **Rien de ce travail n'a été committé ou poussé.**
+**Mise à jour (2026-09-11)** : le travail a été committé en deux commits sur
+`main` (`feat(transcription): segment, stop and resume a posteriori
+transcription`, puis `chore(release): prepare v0.2.0`), poussés vers
+`origin/main`, et le tag `v0.2.0` a été créé et poussé pour déclencher
+`.github/workflows/release.yml`.
+
+État final réel de ce run CI (`gh run view 34634392809`), vérifié via `gh`,
+pas supposé : **conclusion globale `success`**.
+
+- [x] `android` : succès.
+- [x] `desktop (windows-latest, --bundles nsis)` : succès.
+- [x] `desktop (ubuntu-22.04, --bundles deb)` : succès (l'annotation "exit
+      code 1" visible sur ce job correspond à l'étape de vérification de
+      mise à niveau N-1, explicitement `continue-on-error: true` dans le
+      workflow tant qu'elle n'est pas stabilisée - elle ne fait pas échouer
+      le job).
+- [x] `android-emulator` : **échec réel** ("Timeout waiting for emulator to
+      boot" - QEMU logiciel sans passthrough KVM pour un invite arm64-v8a
+      sur un hote x86_64, un probleme d'hote deja documente et deliberement
+      `continue-on-error: true` dans le workflow depuis avant cette session,
+      independant de ce travail). N'empeche pas `release-gate` de passer
+      (le contexte `needs.android-emulator.result` d'un job
+      `continue-on-error` est `success` cote gate, meme si sa vraie
+      conclusion API est `failure`).
+- [x] `release-gate` : succès.
+
+**Bug réel trouvé et corrigé pendant cette vérification** (pas un problème
+de ce travail - deja present sur le run v0.1.4 precedent, verifie via `gh
+release view v0.1.3` vs `v0.1.4`) : l'APK publiee etait nommee
+`app-universal-release.apk` au lieu de `InterviewScribe_0.2.0_arm64-v8a.apk`
+(nom par defaut de Gradle, pas un vrai build multi-architecture - meme
+taille en octets que l'APK v0.1.3 correctement nommee, donc bien un
+contenu arm64-v8a seul). Corrige en deux temps : l'asset deja publie a ete
+renomme sur la release existante via l'API GitHub (sans re-upload des
+840 Mo), et le contenu de son fichier `.sha256` corrige pour reference le
+bon nom ; et `.github/workflows/release.yml` corrige a la racine (nouvelle
+etape `Rename APK to match the desktop bundles' naming` juste apres le
+build) pour que les prochaines releases n'aient plus ce defaut.
+
+Le `README.md` pointe toujours vers `v0.1.3` et ne sera mis à jour qu'une
+fois la release `v0.2.0` explicitement publiée (elle existe pour l'instant
+en brouillon sur GitHub, `isDraft: true`) et ses liens de telechargement
+vérifiés un par un.
