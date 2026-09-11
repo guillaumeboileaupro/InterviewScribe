@@ -53,6 +53,35 @@ Le temps reel est une transcription incrementale avec une faible latence, pas un
 7. Generation de la vue nettoyee.
 8. Validation et export.
 
+### Transcription progressive et reprise (11 septembre 2026)
+
+Les imports a posteriori sont traités par fenêtres VAD de 30 secondes au
+maximum. Les frontières sont calculées sous forme de plages d'échantillons :
+le fichier décodé n'est donc pas recopié intégralement en une collection de
+blocs, ce qui évite de doubler la mémoire pour les entretiens de plusieurs
+heures.
+
+Après chaque fenêtre, les segments Whisper et le curseur audio exact
+`interview.transcription_cursor_ms` sont écrits dans une même transaction
+SQLite. Une fermeture entre deux fenêtres laisse l'entretien au statut
+`transcribing`; au prochain démarrage, la bibliothèque propose une reprise à
+partir de ce curseur. Le dernier segment Whisper n'est pas utilisé comme
+curseur, car sa fin peut précéder le silence réellement consommé par la
+fenêtre et provoquer une retranscription en double.
+
+Une demande d'arrêt est coopérative : le bloc Whisper actif se termine, sa
+transaction est validée, puis la boucle s'arrête avant le bloc suivant. Le
+backend émet `segments-updated` seulement après la transaction réussie;
+l'interface recharge alors une queue bornée aux 100 segments récents et
+affiche le texte pendant que les blocs suivants continuent. L'auto-défilement
+suit les nouveaux segments uniquement si l'utilisateur était déjà en bas.
+
+La progression expose le nombre de blocs, la durée audio traitée, la durée
+totale et une estimation du temps restant. Après une reprise, la continuité
+des identités vocales n'est jamais supposée : les nouveaux locuteurs prennent
+la suite de la numérotation existante et leurs attributions sont marquées
+`uncertain` jusqu'à validation humaine.
+
 ## Modele de donnees minimal
 
 - `Interview`: titre, langue, dates, mode, chemin audio et etat.

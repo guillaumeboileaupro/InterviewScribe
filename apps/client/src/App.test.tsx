@@ -251,6 +251,42 @@ describe("App", () => {
     expect(commands).not.toContain("recover_interview");
   });
 
+  it("offers resume and a cooperative stop for an interrupted file transcription", async () => {
+    const commands: string[] = [];
+    const interrupted = {
+      id: 21,
+      title: "Import long interrompu",
+      language: "fr",
+      mode: "posteriori",
+      audio_path: "/audio/21.wav",
+      status: "transcribing",
+      error_message: null,
+      created_at: "0",
+      updated_at: "0",
+    };
+    mockIPC((cmd) => {
+      if (cmd === "plugin:event|listen") return 1;
+      if (cmd === "plugin:event|unlisten") return null;
+      commands.push(cmd);
+      if (cmd === "list_interviews" || cmd === "list_resumable_posteriori")
+        return [interrupted];
+      if (cmd === "list_recovery_candidates") return [];
+      if (cmd === "transcribe_interview") return new Promise(() => {});
+      if (cmd === "stop_transcription") return null;
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+
+    render(<App />);
+    fireEvent.click(await screen.findByRole("button", { name: "Reprendre" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Arrêter" }));
+
+    await waitFor(() => expect(commands).toContain("stop_transcription"));
+    expect(
+      screen.getByRole("button", { name: "Arrêt en cours…" }),
+    ).toBeDisabled();
+    expect(screen.getByText("Texte transcrit en direct")).toBeInTheDocument();
+  });
+
   it("keeps the interrupted session visible when recovery fails", async () => {
     const interrupted = {
       id: 14,

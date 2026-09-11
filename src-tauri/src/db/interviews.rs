@@ -88,12 +88,46 @@ pub fn list_recovery_candidates(
     Ok(out)
 }
 
+/// Posteriori counterpart to `list_recovery_candidates`: imported files
+/// whose transcription was stopped partway through (or crashed) rather than
+/// completed, and are therefore safe to resume. `active_interview_id`
+/// excludes whichever transcription (if any) is running right now, so its
+/// own library row never shows a stale "Reprendre" badge while it's already
+/// in flight.
+pub fn list_resumable_posteriori(
+    conn: &Connection,
+    active_interview_id: Option<i64>,
+) -> Result<Vec<Interview>, AppError> {
+    let mut stmt = conn.prepare(
+        "SELECT id, title, notes, language, mode, audio_path, status, error_message, created_at, updated_at
+         FROM interview
+         WHERE mode = 'posteriori' AND status IN ('transcribing', 'error')
+           AND (?1 IS NULL OR id != ?1)
+         ORDER BY created_at DESC",
+    )?;
+    let rows = stmt.query_map(params![active_interview_id], row_to_interview)?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
 pub fn set_audio_path(conn: &Connection, id: i64, audio_path: &str) -> Result<(), AppError> {
     conn.execute(
         "UPDATE interview SET audio_path = ?1, updated_at = ?2 WHERE id = ?3",
         params![audio_path, super::now_epoch_secs(), id],
     )?;
     Ok(())
+}
+
+pub fn transcription_cursor_ms(conn: &Connection, id: i64) -> Result<i64, AppError> {
+    conn.query_row(
+        "SELECT transcription_cursor_ms FROM interview WHERE id = ?1",
+        params![id],
+        |row| row.get(0),
+    )
+    .map_err(AppError::from)
 }
 
 /// Sets the free-text note attached to an interview (distinct from `title`
@@ -262,6 +296,26 @@ mod tests {
 
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].id, interrupted.id);
+    }
+
+    #[test]
+    fn resumable_posteriori_excludes_realtime_and_the_active_transcription() {
+        let conn = setup();
+        let stopped = create(&conn, "Import arrete", None, "/audio/1.wav").unwrap();
+        update_status(&conn, stopped.id, "transcribing", None).unwrap();
+        let currently_running = create(&conn, "Import en cours", None, "/audio/2.wav").unwrap();
+        update_status(&conn, currently_running.id, "transcribing", None).unwrap();
+        create_realtime(&conn, "Session live interrompue", "/audio/3.wav").unwrap();
+        let finished = create(&conn, "Import termine", None, "/audio/4.wav").unwrap();
+        update_status(&conn, finished.id, "transcribed", None).unwrap();
+        let retryable_error = create(&conn, "Import en erreur", None, "/audio/5.wav").unwrap();
+        update_status(&conn, retryable_error.id, "error", Some("erreur technique")).unwrap();
+
+        let resumable = list_resumable_posteriori(&conn, Some(currently_running.id)).unwrap();
+
+        assert_eq!(resumable.len(), 2);
+        assert!(resumable.iter().any(|item| item.id == stopped.id));
+        assert!(resumable.iter().any(|item| item.id == retryable_error.id));
     }
 
     #[test]

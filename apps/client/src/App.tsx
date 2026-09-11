@@ -13,11 +13,13 @@ import {
   getInterview,
   importInterview,
   keepInterruptedAsIs,
+  keepPosterioriAsIs,
   listAvailableModels,
   listInputDevices,
   listInterviews,
   listRecentSegments,
   listRecoveryCandidates,
+  listResumablePosteriori,
   mergeSpeakers,
   pauseRecording,
   readRecentLogs,
@@ -28,6 +30,7 @@ import {
   saveSegmentEdit,
   startRecording,
   stopRecording,
+  stopTranscription,
   transcribeInterview,
   undoSegmentEdit,
   updateInterviewNotes,
@@ -77,6 +80,87 @@ type TaskProgress = {
   stage_label: string;
   percent: number;
 };
+
+type ChunkProgress = {
+  interview_id: number;
+  chunk_index: number;
+  chunk_count: number;
+  chunk_start_ms: number;
+  chunk_end_ms: number;
+  audio_duration_ms: number;
+  estimated_remaining_ms: number;
+};
+
+// Small discrete "N of M" visualization for a posteriori transcription's
+// chunks - complements ProgressPanel's continuous percentage with a real,
+// countable sense of how much of the audio is done vs left to go.
+function ChunkProgressRow({ progress }: { progress: ChunkProgress }) {
+  return (
+    <div
+      className="chunkProgressRow"
+      role="status"
+      aria-label={`Segment ${progress.chunk_index} sur ${progress.chunk_count}`}
+    >
+      <span className="chunkProgressLabel">
+        Segment {progress.chunk_index} / {progress.chunk_count} · audio traité{" "}
+        {formatTimestamp(progress.chunk_end_ms)} /{" "}
+        {formatTimestamp(progress.audio_duration_ms)}
+        {progress.estimated_remaining_ms > 0 && (
+          <>
+            {" "}
+            · environ {formatTimestamp(progress.estimated_remaining_ms)} restant
+          </>
+        )}
+      </span>
+      <progress
+        value={progress.chunk_index}
+        max={Math.max(progress.chunk_count, 1)}
+      />
+    </div>
+  );
+}
+
+function LiveTranscription({ segments }: { segments: Segment[] }) {
+  const textRef = useRef<HTMLDivElement>(null);
+  const followLatestRef = useRef(true);
+  const latestSegmentId = segments.at(-1)?.id;
+  useEffect(() => {
+    const element = textRef.current;
+    if (element && followLatestRef.current) {
+      element.scrollTop = element.scrollHeight;
+    }
+  }, [latestSegmentId]);
+
+  return (
+    <section className="liveTranscription">
+      <strong>Texte transcrit en direct</strong>
+      {segments.length === 0 ? (
+        <p className="muted">Le texte apparaîtra après le premier bloc.</p>
+      ) : (
+        <div
+          className="liveTranscriptionText"
+          ref={textRef}
+          role="log"
+          aria-live="polite"
+          aria-relevant="additions"
+          onScroll={(event) => {
+            const element = event.currentTarget;
+            followLatestRef.current =
+              element.scrollHeight - element.scrollTop - element.clientHeight <
+              48;
+          }}
+        >
+          {segments.map((segment) => (
+            <p key={segment.id}>
+              <time>{formatTimestamp(segment.start_ms)}</time>{" "}
+              {segment.raw_text}
+            </p>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
 
 const TRANSCRIPTION_STAGES = [
   { id: "model", label: "Modèle local", start: 0, end: 8 },
@@ -147,6 +231,15 @@ export default function App() {
   const [recoveryIds, setRecoveryIds] = useState<Set<number>>(new Set());
   const [recoveryBusyId, setRecoveryBusyId] = useState<number | null>(null);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
+  const [resumablePosterioriIds, setResumablePosterioriIds] = useState<
+    Set<number>
+  >(new Set());
+  const [resumablePosterioriBusyId, setResumablePosterioriBusyId] = useState<
+    number | null
+  >(null);
+  const [resumablePosterioriError, setResumablePosterioriError] = useState<
+    string | null
+  >(null);
   const [currentInterview, setCurrentInterview] =
     useState<InterviewDetail | null>(null);
 
@@ -191,12 +284,20 @@ export default function App() {
     number | null
   >(null);
   const [recordingSegments, setRecordingSegments] = useState<Segment[]>([]);
+  const [liveTranscriptionSegments, setLiveTranscriptionSegments] = useState<
+    Segment[]
+  >([]);
   const [recordingLevel, setRecordingLevel] = useState(0);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const recordingInterviewIdRef = useRef<number | null>(null);
 
   const [taskProgress, setTaskProgress] = useState<TaskProgress | null>(null);
+  const [transcriptionStopRequested, setTranscriptionStopRequested] =
+    useState(false);
+  const [chunkProgress, setChunkProgress] = useState<ChunkProgress | null>(
+    null,
+  );
   const [activeExport, setActiveExport] = useState<string | null>(null);
   const [visibleSegmentCount, setVisibleSegmentCount] = useState(200);
   const transcribingInterviewIdRef = useRef<number | null>(null);
@@ -213,6 +314,13 @@ export default function App() {
         setRecoveryIds(new Set(candidates.map((candidate) => candidate.id))),
       )
       .catch(() => setRecoveryIds(new Set()));
+    listResumablePosteriori()
+      .then((candidates) =>
+        setResumablePosterioriIds(
+          new Set(candidates.map((candidate) => candidate.id)),
+        ),
+      )
+      .catch(() => setResumablePosterioriIds(new Set()));
   };
 
   useEffect(() => {
@@ -296,10 +404,16 @@ export default function App() {
       setRecordingLevel(event.payload);
     });
     const unlistenSegments = listen<number>("segments-updated", (event) => {
-      if (event.payload !== recordingInterviewIdRef.current) return;
-      listRecentSegments(event.payload)
-        .then(setRecordingSegments)
-        .catch(() => {});
+      if (event.payload === recordingInterviewIdRef.current) {
+        listRecentSegments(event.payload)
+          .then(setRecordingSegments)
+          .catch(() => {});
+      }
+      if (event.payload === transcribingInterviewIdRef.current) {
+        listRecentSegments(event.payload)
+          .then(setLiveTranscriptionSegments)
+          .catch(() => {});
+      }
     });
     const unlistenError = listen<string>("recording-error", (event) => {
       setRecordingError(event.payload);
@@ -312,6 +426,14 @@ export default function App() {
         setTaskProgress(event.payload);
       },
     );
+    const unlistenChunkProgress = listen<ChunkProgress>(
+      "chunk-progress",
+      (event) => {
+        if (event.payload.interview_id !== transcribingInterviewIdRef.current)
+          return;
+        setChunkProgress(event.payload);
+      },
+    );
     return () => {
       // Fire-and-forget: nothing meaningful to do if unregistering a
       // listener fails during teardown (e.g. the window is already closing).
@@ -319,6 +441,7 @@ export default function App() {
       unlistenSegments.then((unlisten) => unlisten()).catch(() => {});
       unlistenError.then((unlisten) => unlisten()).catch(() => {});
       unlistenTaskProgress.then((unlisten) => unlisten()).catch(() => {});
+      unlistenChunkProgress.then((unlisten) => unlisten()).catch(() => {});
     };
   }, []);
 
@@ -378,6 +501,8 @@ export default function App() {
     setRecoveryError(null);
     if (!keepOnly) {
       transcribingInterviewIdRef.current = interviewId;
+      setLiveTranscriptionSegments([]);
+      setTranscriptionStopRequested(false);
       setTaskProgress({
         interview_id: interviewId,
         task: "recovery",
@@ -400,6 +525,48 @@ export default function App() {
       setRecoveryBusyId(null);
       transcribingInterviewIdRef.current = null;
       setTaskProgress(null);
+    }
+  };
+
+  const handleResumablePosteriori = async (
+    interviewId: number,
+    keepOnly: boolean,
+  ) => {
+    setResumablePosterioriBusyId(interviewId);
+    setResumablePosterioriError(null);
+    if (!keepOnly) {
+      transcribingInterviewIdRef.current = interviewId;
+      setTaskProgress({
+        interview_id: interviewId,
+        task: "transcription",
+        stage: "model",
+        stage_label: "Préparation de la reprise",
+        percent: 0,
+      });
+    }
+    try {
+      // Resuming a stopped posteriori transcription is the same command as
+      // starting one - transcribe_local picks up from whatever was already
+      // persisted (see src-tauri/src/lib.rs), no separate "resume" call.
+      const detail = keepOnly
+        ? await keepPosterioriAsIs(interviewId)
+        : await transcribeInterview(
+            interviewId,
+            undefined,
+            selectedModelId || undefined,
+          );
+      setVisibleSegmentCount(200);
+      setCurrentInterview(detail);
+      setPage("interview");
+      refreshInterviews();
+    } catch (err) {
+      setResumablePosterioriError(String(err));
+    } finally {
+      setResumablePosterioriBusyId(null);
+      transcribingInterviewIdRef.current = null;
+      setTaskProgress(null);
+      setChunkProgress(null);
+      setTranscriptionStopRequested(false);
     }
   };
 
@@ -432,6 +599,8 @@ export default function App() {
       refreshInterviews();
       const parsedCount = Number.parseInt(expectedSpeakerCount, 10);
       transcribingInterviewIdRef.current = interview.id;
+      setLiveTranscriptionSegments([]);
+      setTranscriptionStopRequested(false);
       setTaskProgress({
         interview_id: interview.id,
         task: "transcription",
@@ -456,6 +625,20 @@ export default function App() {
       setPrepareBusy(false);
       transcribingInterviewIdRef.current = null;
       setTaskProgress(null);
+      setChunkProgress(null);
+      setTranscriptionStopRequested(false);
+    }
+  };
+
+  const handleStopTranscription = async () => {
+    const interviewId = transcribingInterviewIdRef.current;
+    if (interviewId === null || transcriptionStopRequested) return;
+    setTranscriptionStopRequested(true);
+    try {
+      await stopTranscription(interviewId);
+    } catch (err) {
+      setTranscriptionStopRequested(false);
+      setPrepareError(String(err));
     }
   };
 
@@ -842,6 +1025,24 @@ export default function App() {
           {recoveryBusyId !== null && taskProgress && (
             <ProgressPanel progress={taskProgress} />
           )}
+          {resumablePosterioriBusyId !== null && taskProgress && (
+            <ProgressPanel progress={taskProgress} />
+          )}
+          {resumablePosterioriBusyId !== null && chunkProgress && (
+            <ChunkProgressRow progress={chunkProgress} />
+          )}
+          {resumablePosterioriBusyId !== null && (
+            <>
+              <button
+                className="secondary"
+                disabled={transcriptionStopRequested}
+                onClick={handleStopTranscription}
+              >
+                {transcriptionStopRequested ? "Arrêt en cours…" : "Arrêter"}
+              </button>
+              <LiveTranscription segments={liveTranscriptionSegments} />
+            </>
+          )}
           {page === "library" && (
             <>
               <div className="pageHeading">
@@ -942,6 +1143,11 @@ export default function App() {
                         Récupération impossible : {recoveryError}
                       </div>
                     )}
+                    {resumablePosterioriError && (
+                      <div className="notice" role="alert">
+                        Reprise impossible : {resumablePosterioriError}
+                      </div>
+                    )}
                     <ul>
                       {interviews.map((interview) => (
                         <li className="interviewRow" key={interview.id}>
@@ -955,6 +1161,11 @@ export default function App() {
                             {recoveryIds.has(interview.id) && (
                               <p className="recoveryLabel">
                                 Enregistrement interrompu · audio local préservé
+                              </p>
+                            )}
+                            {resumablePosterioriIds.has(interview.id) && (
+                              <p className="recoveryLabel">
+                                Transcription interrompue · reprise possible
                               </p>
                             )}
                           </div>
@@ -975,6 +1186,33 @@ export default function App() {
                                 disabled={recoveryBusyId === interview.id}
                                 onClick={() =>
                                   handleRecovery(interview.id, true)
+                                }
+                              >
+                                Conserver en l’état
+                              </button>
+                            </div>
+                          )}
+                          {resumablePosterioriIds.has(interview.id) && (
+                            <div className="recoveryActions">
+                              <button
+                                disabled={
+                                  resumablePosterioriBusyId === interview.id
+                                }
+                                onClick={() =>
+                                  handleResumablePosteriori(interview.id, false)
+                                }
+                              >
+                                {resumablePosterioriBusyId === interview.id
+                                  ? "Reprise…"
+                                  : "Reprendre"}
+                              </button>
+                              <button
+                                className="secondary"
+                                disabled={
+                                  resumablePosterioriBusyId === interview.id
+                                }
+                                onClick={() =>
+                                  handleResumablePosteriori(interview.id, true)
                                 }
                               >
                                 Conserver en l’état
@@ -1569,8 +1807,25 @@ export default function App() {
                         ? "Transcription en cours…"
                         : "Choisir un fichier audio"}
                     </button>
+                    {prepareBusy && (
+                      <button
+                        className="secondary"
+                        disabled={transcriptionStopRequested}
+                        onClick={handleStopTranscription}
+                      >
+                        {transcriptionStopRequested
+                          ? "Arrêt en cours…"
+                          : "Arrêter"}
+                      </button>
+                    )}
                     {prepareBusy && taskProgress && (
                       <ProgressPanel progress={taskProgress} />
+                    )}
+                    {prepareBusy && chunkProgress && (
+                      <ChunkProgressRow progress={chunkProgress} />
+                    )}
+                    {prepareBusy && (
+                      <LiveTranscription segments={liveTranscriptionSegments} />
                     )}
                   </>
                 ) : (

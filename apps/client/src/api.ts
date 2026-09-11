@@ -135,6 +135,20 @@ export function keepInterruptedAsIs(
   return invoke("keep_interrupted_as_is", { interviewId });
 }
 
+export function listResumablePosteriori(): Promise<Interview[]> {
+  return invoke("list_resumable_posteriori");
+}
+
+export function keepPosterioriAsIs(
+  interviewId: number,
+): Promise<InterviewDetail> {
+  return invoke("keep_posteriori_as_is", { interviewId });
+}
+
+export function stopTranscription(interviewId: number): Promise<void> {
+  return invoke("stop_transcription", { interviewId });
+}
+
 export function getInterview(interviewId: number): Promise<InterviewDetail> {
   return invoke("get_interview", { interviewId });
 }

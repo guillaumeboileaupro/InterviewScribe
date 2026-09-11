@@ -521,6 +521,39 @@ footer {
 .progressStage span:first-child {
   overflow-wrap: anywhere;
 }
+.chunkProgressRow {
+  margin-top: 12px;
+}
+.chunkProgressLabel {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.chunkProgressRow progress {
+  width: 100%;
+}
+.liveTranscription {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.liveTranscriptionText {
+  max-height: 240px;
+  margin-top: 12px;
+  overflow: auto;
+}
+.liveTranscriptionText p {
+  margin: 0 0 10px;
+  overflow-wrap: anywhere;
+}
+.liveTranscriptionText time {
+  margin-right: 8px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
 .recordingProgressGrid {
   padding-top: 14px;
   border-top: 1px solid var(--border);

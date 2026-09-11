@@ -2,7 +2,7 @@ use rusqlite::Connection;
 
 use crate::error::AppError;
 
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 
 pub fn init(conn: &Connection) -> Result<(), AppError> {
     conn.execute_batch(
@@ -18,6 +18,7 @@ pub fn init(conn: &Connection) -> Result<(), AppError> {
             audio_path TEXT NOT NULL,
             status TEXT NOT NULL CHECK (status IN ('imported','transcribing','transcribed','error')),
             error_message TEXT,
+            transcription_cursor_ms INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
@@ -77,6 +78,12 @@ pub fn init(conn: &Connection) -> Result<(), AppError> {
 fn migrate(conn: &Connection) -> Result<(), AppError> {
     ensure_column(conn, "edit", "reverted_at", "TEXT")?;
     ensure_column(conn, "interview", "notes", "TEXT")?;
+    ensure_column(
+        conn,
+        "interview",
+        "transcription_cursor_ms",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_edit_segment ON edit(segment_id, reverted_at)",
         [],
@@ -187,6 +194,37 @@ mod tests {
 
         // Running it again must not error (idempotent).
         init(&conn).unwrap();
+    }
+
+    #[test]
+    fn migrate_adds_transcription_cursor_to_a_pre_existing_database() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE interview (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                notes TEXT,
+                language TEXT,
+                mode TEXT NOT NULL,
+                audio_path TEXT NOT NULL,
+                status TEXT NOT NULL,
+                error_message TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );",
+        )
+        .unwrap();
+
+        init(&conn).unwrap();
+
+        let has_cursor = conn
+            .prepare("PRAGMA table_info(interview)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .filter_map(Result::ok)
+            .any(|name| name == "transcription_cursor_ms");
+        assert!(has_cursor);
     }
 
     #[test]

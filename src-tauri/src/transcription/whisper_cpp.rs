@@ -57,24 +57,6 @@ impl WhisperCppTranscriber {
         params
     }
 
-    /// Same transcription as `Transcriber::transcribe`, but reports
-    /// whisper.cpp's own 0-100 progress as it runs - lets the frontend show a
-    /// real progress bar instead of a static "in progress" label. Kept off
-    /// the `Transcriber` trait itself: `recovery::transcribe_remainder` and
-    /// the AMI evaluation harness share that trait and have no use for
-    /// progress reporting, so adding it there would force unrelated changes
-    /// to `recovery.rs`.
-    pub fn transcribe_with_progress(
-        &self,
-        pcm: &[f32],
-        language: Option<&str>,
-        on_progress: impl FnMut(i32) + 'static,
-    ) -> Result<Vec<RawSegment>, AppError> {
-        let mut params = Self::base_params(language);
-        params.set_progress_callback_safe(on_progress);
-        self.run(params, pcm)
-    }
-
     fn run(&self, params: FullParams<'_, '_>, pcm: &[f32]) -> Result<Vec<RawSegment>, AppError> {
         let mut state = self
             .context
@@ -444,6 +426,347 @@ mod tests {
         assert!(
             violations.is_empty(),
             "AMI quality thresholds exceeded: {violations:?}"
+        );
+    }
+
+    /// Transcribes each PCM range in order, offsetting timestamps the same
+    /// way `transcribe_local` does, and returns the total duration accounted
+    /// for afterwards - shared by `posteriori_stop_resume_smoke` to drive
+    /// both a straight-through pass and a stop/resume pass over the same
+    /// audio without duplicating the offset bookkeeping.
+    fn transcribe_ranges(
+        transcriber: &WhisperCppTranscriber,
+        pcm: &[f32],
+        ranges: &[std::ops::Range<usize>],
+        mut offset_ms: i64,
+        ms_per_sample: f64,
+    ) -> (Vec<crate::evaluation::TimedText>, i64) {
+        let mut out = Vec::new();
+        for range in ranges {
+            let chunk = &pcm[range.clone()];
+            let segments = transcriber.transcribe(chunk, None).expect("transcribe chunk");
+            for segment in segments {
+                out.push(crate::evaluation::TimedText {
+                    start_ms: segment.start_ms + offset_ms,
+                    end_ms: segment.end_ms + offset_ms,
+                    text: segment.text,
+                });
+            }
+            offset_ms += (chunk.len() as f64 * ms_per_sample).round() as i64;
+        }
+        (out, offset_ms)
+    }
+
+    /// Manual end-to-end validation for the a posteriori "arreter puis
+    /// reprendre" design (docs/TRANSCRIPTION_RESUME_PLAN.md): transcribes
+    /// real speech in one uninterrupted chunked pass, then again split into
+    /// a "before a stop" chunk and a "resumed" run over the remainder - the
+    /// exact same re-chunk-from-the-boundary path `transcribe_local` takes
+    /// on a real resume - and checks both passes cover the same total audio
+    /// duration with no overlapping/duplicate segment at the boundary. Pure
+    /// index-slicing already makes double-transcription of the same audio
+    /// structurally impossible (see `chunk_ranges_cover_audio_without_
+    /// retaining_chunk_copies`); what only a real model can show is whether
+    /// splitting real speech at a VAD boundary and resuming produces the
+    /// same coherent text as one continuous pass. Never runs in CI; needs a
+    /// real model and real speech (AGENTS.md: never commit either).
+    ///
+    /// Run with:
+    ///   INTERVIEWSCRIBE_TEST_MODEL=/path/to/model.bin \
+    ///   INTERVIEWSCRIBE_TEST_WAV=/path/to/real-speech.wav \
+    ///   cargo test --manifest-path src-tauri/Cargo.toml -- --ignored --nocapture posteriori_stop_resume_smoke
+    #[test]
+    #[ignore]
+    fn posteriori_stop_resume_smoke() {
+        let model_path = std::env::var("INTERVIEWSCRIBE_TEST_MODEL")
+            .expect("set INTERVIEWSCRIBE_TEST_MODEL to a local ggml model path");
+        let wav_path = std::env::var("INTERVIEWSCRIBE_TEST_WAV")
+            .expect("set INTERVIEWSCRIBE_TEST_WAV to a local wav path with real speech");
+
+        let pcm = crate::audio::decode::decode_to_mono_pcm16k(std::path::Path::new(&wav_path))
+            .expect("failed to decode test wav");
+        let transcriber = WhisperCppTranscriber::load(std::path::Path::new(&model_path))
+            .expect("failed to load model");
+        let ms_per_sample = 1000.0 / crate::audio::decode::WHISPER_SAMPLE_RATE as f64;
+
+        // A small cap forces even a short fixture to split into several
+        // chunks, exercising the same boundary math `transcribe_local` uses
+        // in production (which defaults to a 30s cap).
+        let max_chunk_ms = 6_000;
+        let silence_ms = 800;
+        let ranges = crate::transcription::chunk_pcm_ranges(&pcm, max_chunk_ms, silence_ms);
+        assert!(
+            ranges.len() >= 2,
+            "expected the fixture to split into multiple chunks with a {max_chunk_ms}ms cap, got {}",
+            ranges.len()
+        );
+
+        // Pass 1: every chunk transcribed in one uninterrupted run - the
+        // "never stopped" baseline.
+        let (straight_through, straight_total_ms) =
+            transcribe_ranges(&transcriber, &pcm, &ranges, 0, ms_per_sample);
+
+        // Pass 2: stop right after the first chunk, then resume exactly like
+        // `transcribe_local` does on a real resume - re-chunk the remainder
+        // from scratch (a fresh `Vad`/`Chunker`, same as a real app restart)
+        // and keep going from the boundary the first pass stopped at.
+        let boundary_sample = ranges[0].end;
+        let boundary_ms = (boundary_sample as f64 * ms_per_sample).round() as i64;
+        let (mut stop_then_resume, _) =
+            transcribe_ranges(&transcriber, &pcm, &ranges[..1], 0, ms_per_sample);
+        let remaining_pcm = &pcm[boundary_sample..];
+        let resumed_ranges =
+            crate::transcription::chunk_pcm_ranges(remaining_pcm, max_chunk_ms, silence_ms);
+        let (resumed, resumed_total_ms) = transcribe_ranges(
+            &transcriber,
+            remaining_pcm,
+            &resumed_ranges,
+            boundary_ms,
+            ms_per_sample,
+        );
+        stop_then_resume.extend(resumed);
+
+        assert_eq!(
+            straight_total_ms, resumed_total_ms,
+            "stop+resume must account for the exact same total duration as a straight-through pass"
+        );
+
+        let overlaps_within = |segments: &[crate::evaluation::TimedText]| {
+            segments
+                .windows(2)
+                .filter(|pair| pair[1].start_ms < pair[0].end_ms)
+                .count()
+        };
+        assert_eq!(
+            overlaps_within(&straight_through),
+            0,
+            "straight-through pass produced overlapping segments"
+        );
+        assert_eq!(
+            overlaps_within(&stop_then_resume),
+            0,
+            "stop+resume pass produced overlapping segments at the boundary"
+        );
+        let boundaries = crate::evaluation::boundary_metrics(&[], &stop_then_resume);
+        assert_eq!(
+            boundaries.duplicate_count, 0,
+            "stop+resume repeated the same text with overlapping timestamps at the boundary"
+        );
+
+        println!(
+            "-- straight-through ({} segments, {straight_total_ms}ms total) --",
+            straight_through.len()
+        );
+        for segment in &straight_through {
+            println!("[{} - {}] {}", segment.start_ms, segment.end_ms, segment.text);
+        }
+        println!(
+            "-- stopped after chunk 1, resumed ({} segments, {resumed_total_ms}ms total) --",
+            stop_then_resume.len()
+        );
+        for segment in &stop_then_resume {
+            println!("[{} - {}] {}", segment.start_ms, segment.end_ms, segment.text);
+        }
+
+        let straight_text: String = straight_through
+            .iter()
+            .map(|segment| segment.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        let resumed_text: String = stop_then_resume
+            .iter()
+            .map(|segment| segment.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        let wer = crate::evaluation::word_error_rate(&straight_text, &resumed_text).rate;
+        println!("straight-through vs stop+resume word error rate: {wer:.4}");
+    }
+
+    /// Same idea as `posteriori_stop_resume_smoke`, but longer and with two
+    /// successive stop/resume cycles instead of one - the exact gap that
+    /// test's own doc comment (and docs/TRANSCRIPTION_RESUME_PLAN.md) flags
+    /// as unverified: "plusieurs cycles d'arret/reprise successifs" and more
+    /// than a 20s clip. Real speech fixtures this short are the only ones
+    /// available locally (AGENTS.md: never commit real audio), so the real
+    /// AMI clip is repeated with a silence gap between each copy to get a
+    /// longer, still-real-speech buffer - the repetition only affects word
+    /// content, not the acoustic signal a chunk boundary actually has to
+    /// cope with. The gap matters: an earlier version of this test spliced
+    /// copies back to back with zero silence, which is not how real
+    /// recordings ever sound (no pause, no room tone) - the VAD and Whisper
+    /// both treated that artificial hard cut as speech continuing
+    /// mid-sentence and produced a genuinely overlapping segment right at
+    /// the splice, a false positive caused by the test fixture, not
+    /// `chunk_pcm_ranges` or `transcribe_local`. Never runs in CI; needs a
+    /// real model and real speech.
+    ///
+    /// Run with:
+    ///   INTERVIEWSCRIBE_TEST_MODEL=/path/to/model.bin \
+    ///   INTERVIEWSCRIBE_TEST_WAV=/path/to/real-speech.wav \
+    ///   cargo test --manifest-path src-tauri/Cargo.toml -- --ignored --nocapture posteriori_multi_stop_resume_smoke
+    #[test]
+    #[ignore]
+    fn posteriori_multi_stop_resume_smoke() {
+        let model_path = std::env::var("INTERVIEWSCRIBE_TEST_MODEL")
+            .expect("set INTERVIEWSCRIBE_TEST_MODEL to a local ggml model path");
+        let wav_path = std::env::var("INTERVIEWSCRIBE_TEST_WAV")
+            .expect("set INTERVIEWSCRIBE_TEST_WAV to a local wav path with real speech");
+
+        let clip = crate::audio::decode::decode_to_mono_pcm16k(std::path::Path::new(&wav_path))
+            .expect("failed to decode test wav");
+        let repeats = 4;
+        // A real pause between repeats, not a hard splice - see the doc
+        // comment above. A tiny noise floor rather than exact digital
+        // silence: an earlier version used `vec![0.0; ...]` and Whisper
+        // hallucinated a short spurious word ("you") right at the edge of
+        // every one of those absolute-silence gaps - a well-known Whisper
+        // quirk with true digital silence, and again a property of this
+        // test's synthetic fixture, not of `chunk_pcm_ranges` or
+        // `transcribe_local`. Real recordings always have some noise floor
+        // (room tone, mic self-noise), so this generates one instead of
+        // reproducing a case whisper.cpp is known to mishandle.
+        let mut noise_state = 42u64;
+        let silence_gap: Vec<f32> = (0..crate::audio::decode::WHISPER_SAMPLE_RATE as usize)
+            .map(|_| {
+                noise_state = noise_state
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1);
+                let uniform = ((noise_state >> 40) as f32) / (1u64 << 24) as f32;
+                (uniform * 2.0 - 1.0) * 0.0015
+            })
+            .collect();
+        let mut pcm = Vec::with_capacity((clip.len() + silence_gap.len()) * repeats);
+        for i in 0..repeats {
+            if i > 0 {
+                pcm.extend_from_slice(&silence_gap);
+            }
+            pcm.extend_from_slice(&clip);
+        }
+        let transcriber = WhisperCppTranscriber::load(std::path::Path::new(&model_path))
+            .expect("failed to load model");
+        let ms_per_sample = 1000.0 / crate::audio::decode::WHISPER_SAMPLE_RATE as f64;
+        let max_chunk_ms = 6_000;
+        let silence_ms = 800;
+
+        let ranges = crate::transcription::chunk_pcm_ranges(&pcm, max_chunk_ms, silence_ms);
+        assert!(
+            ranges.len() >= 6,
+            "expected the repeated fixture to split into several chunks, got {}",
+            ranges.len()
+        );
+
+        // Baseline: every chunk transcribed in one uninterrupted run.
+        let (straight_through, straight_total_ms) =
+            transcribe_ranges(&transcriber, &pcm, &ranges, 0, ms_per_sample);
+
+        // Two successive stop/resume cycles: transcribe a couple of chunks,
+        // "stop", re-chunk and transcribe the remainder from scratch a first
+        // time, "stop" again partway through that remainder, then re-chunk
+        // and transcribe what is left a second time - exactly what a second
+        // interruption during an already-resumed session does in production.
+        let cycles = [2usize, 2usize];
+        let mut multi_cycle = Vec::new();
+        let mut cursor_pcm: &[f32] = &pcm;
+        let mut cursor_ms = 0i64;
+        for &chunks_before_stop in &cycles {
+            let cycle_ranges =
+                crate::transcription::chunk_pcm_ranges(cursor_pcm, max_chunk_ms, silence_ms);
+            let take = chunks_before_stop.min(cycle_ranges.len());
+            let (segments, advanced_ms) = transcribe_ranges(
+                &transcriber,
+                cursor_pcm,
+                &cycle_ranges[..take],
+                cursor_ms,
+                ms_per_sample,
+            );
+            multi_cycle.extend(segments);
+            let boundary_sample = cycle_ranges[..take]
+                .last()
+                .map(|range| range.end)
+                .unwrap_or(0);
+            cursor_pcm = &cursor_pcm[boundary_sample..];
+            cursor_ms = advanced_ms;
+        }
+        // Final resume: whatever is left after both simulated stops.
+        let final_ranges = crate::transcription::chunk_pcm_ranges(cursor_pcm, max_chunk_ms, silence_ms);
+        let (final_segments, final_total_ms) = transcribe_ranges(
+            &transcriber,
+            cursor_pcm,
+            &final_ranges,
+            cursor_ms,
+            ms_per_sample,
+        );
+        multi_cycle.extend(final_segments);
+
+        println!(
+            "-- straight-through ({} segments, {straight_total_ms}ms total, {repeats}x real clip) --",
+            straight_through.len()
+        );
+        for segment in &straight_through {
+            println!("[{} - {}] {}", segment.start_ms, segment.end_ms, segment.text);
+        }
+        println!(
+            "-- two stop/resume cycles ({} segments, {final_total_ms}ms total) --",
+            multi_cycle.len()
+        );
+        for segment in &multi_cycle {
+            println!("[{} - {}] {}", segment.start_ms, segment.end_ms, segment.text);
+        }
+
+        assert_eq!(
+            straight_total_ms, final_total_ms,
+            "two stop/resume cycles must still account for the exact same total duration"
+        );
+
+        // The property that actually matters for the resume feature is
+        // parity with the straight-through baseline, not a blanket "zero
+        // overlaps ever": with an aggressive 6s cap forcing several
+        // mid-utterance cuts on a short repeated fixture, Whisper itself
+        // occasionally hallucinates a short spurious word right at a forced
+        // chunk boundary and reports a timestamp for it that overruns the
+        // chunk's own audio - a real whisper.cpp quirk with hard-capped
+        // chunks (production uses a much less aggressive 30s cap), and one
+        // that shows up identically whether the audio is processed in one
+        // continuous run or via two stop/resume cycles. What resuming must
+        // never do is introduce a *new* discrepancy versus never having
+        // stopped at all - so compare the two passes directly instead of
+        // asserting an idealized zero that even the baseline does not meet.
+        let overlaps_within = |segments: &[crate::evaluation::TimedText]| {
+            segments
+                .windows(2)
+                .filter(|pair| pair[1].start_ms < pair[0].end_ms)
+                .count()
+        };
+        let straight_overlaps = overlaps_within(&straight_through);
+        let multi_cycle_overlaps = overlaps_within(&multi_cycle);
+        println!(
+            "overlap count - straight-through: {straight_overlaps}, stop+resume: {multi_cycle_overlaps}"
+        );
+        assert_eq!(
+            straight_overlaps, multi_cycle_overlaps,
+            "stopping and resuming changed the number of overlapping segments versus never stopping"
+        );
+        assert_eq!(
+            straight_through.len(),
+            multi_cycle.len(),
+            "stopping and resuming changed the segment count versus never stopping"
+        );
+
+        let straight_text: String = straight_through
+            .iter()
+            .map(|segment| segment.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        let multi_cycle_text: String = multi_cycle
+            .iter()
+            .map(|segment| segment.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        let wer = crate::evaluation::word_error_rate(&straight_text, &multi_cycle_text).rate;
+        println!("straight-through vs two-cycle stop+resume word error rate: {wer:.4}");
+        assert_eq!(
+            wer, 0.0,
+            "two stop/resume cycles must reproduce the exact same text as never stopping"
         );
     }
 

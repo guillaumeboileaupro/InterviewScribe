@@ -21,8 +21,9 @@ fn schema_v0_fixture_migrates_without_losing_project_data() {
     let version: i64 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .unwrap();
-    assert_eq!(version, 1);
+    assert_eq!(version, 2);
     assert!(has_column(&conn, "interview", "notes"));
+    assert!(has_column(&conn, "interview", "transcription_cursor_ms"));
     assert!(has_column(&conn, "edit", "reverted_at"));
 
     let interview: (String, Option<String>) = conn

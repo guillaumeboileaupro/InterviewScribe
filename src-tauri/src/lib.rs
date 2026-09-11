@@ -21,6 +21,7 @@ use transcription::Transcriber;
 
 struct DbState(Mutex<rusqlite::Connection>);
 struct RecordingState(Mutex<Option<ActiveRecording>>);
+struct TranscriptionState(Mutex<Option<ActiveTranscription>>);
 
 struct ActiveRecording {
     handle: capture::session::RecordingHandle,
@@ -29,13 +30,42 @@ struct ActiveRecording {
     interview_id: i64,
 }
 
-/// Emitted as `"transcription-progress"` while `transcribe_local` runs, from
-/// whisper.cpp's own 0-100 progress callback - drives a real progress bar on
-/// the frontend instead of a static "in progress" label.
-#[derive(Serialize, Clone)]
-struct TranscriptionProgress {
+/// A posteriori transcription currently running in `transcribe_local`, so
+/// `stop_transcription` has something to signal. Mirrors `ActiveRecording`'s
+/// shape, but the "handle" here is just a flag `transcribe_local`'s chunk
+/// loop polls between chunks - there is no live stream to pause/resume, only
+/// a clean point to stop at.
+struct ActiveTranscription {
     interview_id: i64,
-    percent: i32,
+    stop_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+struct TranscriptionSlotGuard {
+    app: tauri::AppHandle,
+}
+
+impl Drop for TranscriptionSlotGuard {
+    fn drop(&mut self) {
+        if let Ok(mut guard) = self.app.state::<TranscriptionState>().0.lock() {
+            guard.take();
+        }
+    }
+}
+
+/// Emitted as `"chunk-progress"` while `transcribe_local` works through the
+/// chunks a posteriori import got split into (see `transcription::chunk_pcm`),
+/// giving real, observable progress instead of whisper.cpp's own single-file
+/// heuristic percentage - the same split that makes `stop_transcription`
+/// possible between chunks.
+#[derive(Serialize, Clone)]
+struct ChunkProgress {
+    interview_id: i64,
+    chunk_index: usize,
+    chunk_count: usize,
+    chunk_start_ms: i64,
+    chunk_end_ms: i64,
+    audio_duration_ms: i64,
+    estimated_remaining_ms: i64,
 }
 
 #[derive(Serialize, Clone)]
@@ -184,6 +214,40 @@ fn keep_interrupted_as_is(
     if interview.mode != "realtime" || interview.status != "transcribing" {
         return Err(AppError::Audio(
             "cette session n'est pas un enregistrement interrompu".into(),
+        ));
+    }
+    db::interviews::update_status(&conn, interview_id, "transcribed", None)?;
+    db::get_detail(&conn, interview_id)
+}
+
+/// Posteriori counterpart to `keep_interrupted_as_is`: kept separate rather
+/// than widening that function's mode check, since its "still active" guard
+/// reads `RecordingState` (never populated by a posteriori job) - a shared
+/// function would need both states threaded through it for one extra mode.
+#[tauri::command]
+fn keep_posteriori_as_is(
+    db: tauri::State<DbState>,
+    transcription: tauri::State<TranscriptionState>,
+    interview_id: i64,
+) -> Result<db::models::InterviewDetail, AppError> {
+    if transcription
+        .0
+        .lock()
+        .map_err(|_| AppError::Transcription("etat de transcription indisponible".into()))?
+        .as_ref()
+        .is_some_and(|active| active.interview_id == interview_id)
+    {
+        return Err(AppError::Transcription(
+            "conservation refusee: la transcription est encore active".into(),
+        ));
+    }
+    let conn = lock_db(&db)?;
+    let interview = db::interviews::get(&conn, interview_id)?;
+    if interview.mode != "posteriori"
+        || !matches!(interview.status.as_str(), "transcribing" | "error")
+    {
+        return Err(AppError::Transcription(
+            "cet entretien n'est pas une transcription arretee".into(),
         ));
     }
     db::interviews::update_status(&conn, interview_id, "transcribed", None)?;
@@ -363,6 +427,18 @@ async fn transcribe_interview(
     .map_err(|err| AppError::Transcription(format!("traitement interrompu: {err}")))?
 }
 
+const POSTERIORI_CHUNK_MAX_MS: u32 = 30_000;
+const POSTERIORI_CHUNK_SILENCE_MS: u32 = 800;
+
+/// A posteriori import is decoded once, then split into transcription-ready
+/// chunks (`transcription::chunk_pcm`) instead of one uninterruptible
+/// whisper.cpp pass over the whole file: each chunk is transcribed,
+/// diarized and persisted immediately, `"chunk-progress"` reports real
+/// progress after each one, and `stop_transcription` can request a clean
+/// stop between chunks without losing anything already inserted. Calling
+/// this again on a partially-transcribed interview resumes from whatever
+/// was last persisted (`boundary_ms` below) instead of restarting - this
+/// one function is the entry point for both a first pass and a resume.
 fn transcribe_local(
     app: &tauri::AppHandle,
     db: &DbState,
@@ -370,6 +446,50 @@ fn transcribe_local(
     expected_speaker_count: Option<usize>,
     model_id: Option<String>,
 ) -> Result<db::models::InterviewDetail, AppError> {
+    let stop_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    {
+        let state = app.state::<TranscriptionState>();
+        let mut active = state
+            .0
+            .lock()
+            .map_err(|_| AppError::Transcription("etat de transcription indisponible".into()))?;
+        if active.is_some() {
+            return Err(AppError::Transcription(
+                "une transcription est deja en cours".into(),
+            ));
+        }
+        *active = Some(ActiveTranscription {
+            interview_id,
+            stop_flag: stop_flag.clone(),
+        });
+    }
+    let _transcription_slot = TranscriptionSlotGuard { app: app.clone() };
+
+    // Persist the active state before model loading or audio decoding. If the
+    // process closes during either long preparation step, the library can
+    // still discover and resume this interview on the next launch.
+    let interview = {
+        let conn = lock_db(db)?;
+        let interview = db::interviews::get(&conn, interview_id)?;
+        if interview.status == "transcribed" {
+            return db::get_detail(&conn, interview_id);
+        }
+        // Checked before flipping the status: a resume on a moved/deleted
+        // source file should fail immediately with a clear message, not
+        // flip to "transcribing" only to bounce straight to "error" once
+        // decoding fails below - and not fail confusingly deep inside a
+        // generic IO error either.
+        if !Path::new(&interview.audio_path).exists() {
+            return Err(AppError::Audio(
+                "le fichier audio de cet entretien est introuvable - il a peut-etre ete deplace ou supprime".into(),
+            ));
+        }
+        if interview.status != "transcribing" {
+            db::interviews::update_status(&conn, interview_id, "transcribing", None)?;
+        }
+        interview
+    };
+
     diagnostics::log("INFO", "transcription: verification du modele");
     emit_task_progress(
         app,
@@ -393,23 +513,16 @@ fn transcribe_local(
         app,
         transcription::model::selected_whisper_manifest(model_id.as_deref())?,
     )?;
+    let transcription::model::ModelStatus::Ready {
+        path: diarization_model_path,
+        ..
+    } = transcription::model::ensure_manifest(app, transcription::model::diarization_manifest()?)?;
 
-    let interview = {
+    if stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
+        diagnostics::log("INFO", "transcription: arretee pendant la preparation");
         let conn = lock_db(db)?;
-        let interview = db::interviews::get(&conn, interview_id)?;
-        if interview.status == "transcribing" {
-            return Err(AppError::Transcription(
-                "cet entretien est deja en cours de traitement".into(),
-            ));
-        }
-        if interview.status == "transcribed"
-            || !db::segments::list_for_interview(&conn, interview_id)?.is_empty()
-        {
-            return db::get_detail(&conn, interview_id);
-        }
-        db::interviews::update_status(&conn, interview_id, "transcribing", None)?;
-        interview
-    };
+        return db::get_detail(&conn, interview_id);
+    }
 
     let pcm = audio::decode::decode_to_mono_pcm16k(Path::new(&interview.audio_path))
         .map_err(mark_error)?;
@@ -422,30 +535,154 @@ fn transcribe_local(
         "Décodage et normalisation audio",
         18,
     );
+    if stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
+        diagnostics::log("INFO", "transcription: arretee apres le decodage");
+        let conn = lock_db(db)?;
+        return db::get_detail(&conn, interview_id);
+    }
 
+    // Resume point: pick up after whatever's already durably persisted for
+    // this interview (0 on a first pass, or after a previous stop) - the
+    // same one-line derivation `recovery.rs` uses for interrupted realtime
+    // sessions, reimplemented locally here so this stays independent of
+    // that module.
+    let boundary_ms = {
+        let conn = lock_db(db)?;
+        let durable_cursor = db::interviews::transcription_cursor_ms(&conn, interview_id)?;
+        if durable_cursor > 0 {
+            durable_cursor
+        } else {
+            // Compatibility with partial transcriptions created before the
+            // durable cursor migration. New chunks always use the exact end
+            // of the committed audio block instead of this approximation.
+            db::segments::list_for_interview(&conn, interview_id)?
+                .iter()
+                .map(|segment| segment.end_ms)
+                .max()
+                .unwrap_or(0)
+        }
+    };
+    let boundary_sample =
+        ((boundary_ms.max(0) as u64) * audio::decode::WHISPER_SAMPLE_RATE as u64 / 1_000) as usize;
+    let remaining_pcm = &pcm[boundary_sample.min(pcm.len())..];
+
+    let existing_speaker_count = {
+        let conn = lock_db(db)?;
+        db::speakers::list_for_interview(&conn, interview_id)?.len()
+    };
     let transcriber =
         transcription::whisper_cpp::WhisperCppTranscriber::load(Path::new(&model_path))
             .map_err(mark_error)?;
-    let progress_app = app.clone();
-    let raw_segments = transcriber
-        .transcribe_with_progress(&pcm, interview.language.as_deref(), move |percent| {
-            let _ = progress_app.emit(
-                "transcription-progress",
-                TranscriptionProgress {
-                    interview_id,
-                    percent,
-                },
-            );
-            emit_task_progress(
-                &progress_app,
+    // A fresh assigner every call, including a resume: any `Clusterer`
+    // state from before a stop lived only in memory and is gone now. Never
+    // pretend continuity that isn't there - new segments get their own,
+    // independently-numbered speakers, the same honesty principle
+    // `recovery::insert_as_uncertain` already applies to interrupted
+    // realtime sessions.
+    let mut assigner = SpeakerAssigner::new(
+        &diarization_model_path,
+        expected_speaker_count,
+        existing_speaker_count,
+        boundary_ms > 0,
+    )
+    .map_err(mark_error)?;
+
+    let chunks = transcription::chunk_pcm_ranges(
+        remaining_pcm,
+        POSTERIORI_CHUNK_MAX_MS,
+        POSTERIORI_CHUNK_SILENCE_MS,
+    );
+    let chunk_count = chunks.len();
+    if stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
+        diagnostics::log("INFO", "transcription: arretee apres le decoupage");
+        let conn = lock_db(db)?;
+        return db::get_detail(&conn, interview_id);
+    }
+
+    let mut offset_ms = boundary_ms;
+    let mut stopped_early = false;
+    let transcription_started = std::time::Instant::now();
+    let audio_duration_ms = (pcm.len() as i64 * 1_000) / audio::decode::WHISPER_SAMPLE_RATE as i64;
+    for (index, chunk_range) in chunks.into_iter().enumerate() {
+        if stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
+            stopped_early = true;
+            break;
+        }
+        let chunk = &remaining_pcm[chunk_range];
+        let chunk_duration_ms =
+            (chunk.len() as i64 * 1_000) / audio::decode::WHISPER_SAMPLE_RATE as i64;
+        let raw_segments = transcriber
+            .transcribe(chunk, interview.language.as_deref())
+            .map_err(mark_error)?;
+        let (new_segments, uncertain_flags) = if !raw_segments.is_empty() {
+            // Diarization slices the current chunk, so it must receive the
+            // chunk-local Whisper timestamps. Absolute interview timestamps
+            // are applied only afterwards for persistence and display.
+            let conn = lock_db(db)?;
+            let (speaker_ids, uncertain_flags) = assigner
+                .assign_chunk(&conn, interview_id, &raw_segments, chunk)
+                .map_err(mark_error)?;
+            let offset_segments: Vec<transcription::RawSegment> = raw_segments
+                .into_iter()
+                .map(|segment| transcription::RawSegment {
+                    start_ms: segment.start_ms + offset_ms,
+                    end_ms: segment.end_ms + offset_ms,
+                    text: segment.text,
+                    confidence: segment.confidence,
+                })
+                .collect();
+            (
+                transcription::to_new_segments(offset_segments, &speaker_ids),
+                uncertain_flags,
+            )
+        } else {
+            (Vec::new(), Vec::new())
+        };
+        let chunk_start_ms = offset_ms;
+        offset_ms += chunk_duration_ms;
+        {
+            let conn = lock_db(db)?;
+            db::segments::insert_transcription_chunk(
+                &conn,
                 interview_id,
-                "transcription",
-                "whisper",
-                "Transcription Whisper",
-                18 + (percent.clamp(0, 100) * 62 / 100),
-            );
-        })
-        .map_err(mark_error)?;
+                &new_segments,
+                &uncertain_flags,
+                offset_ms,
+            )?;
+        }
+        let _ = app.emit("segments-updated", interview_id);
+        let _ = app.emit(
+            "chunk-progress",
+            ChunkProgress {
+                interview_id,
+                chunk_index: index + 1,
+                chunk_count,
+                chunk_start_ms,
+                chunk_end_ms: offset_ms,
+                audio_duration_ms,
+                estimated_remaining_ms: {
+                    let processed_ms = (offset_ms - boundary_ms).max(1);
+                    let remaining_ms = (audio_duration_ms - offset_ms).max(0);
+                    let elapsed_ms = transcription_started.elapsed().as_millis() as i64;
+                    elapsed_ms.saturating_mul(remaining_ms) / processed_ms
+                },
+            },
+        );
+        emit_task_progress(
+            app,
+            interview_id,
+            "transcription",
+            "whisper",
+            "Transcription Whisper",
+            18 + (((index + 1) * 62) / chunk_count.max(1)) as i32,
+        );
+    }
+    if stopped_early {
+        diagnostics::log("INFO", "transcription: arretee par l'utilisateur");
+        let conn = lock_db(db)?;
+        return db::get_detail(&conn, interview_id);
+    }
+
     diagnostics::log("INFO", "transcription: inference Whisper terminee");
     emit_task_progress(
         app,
@@ -455,19 +692,6 @@ fn transcribe_local(
         "Analyse des intervenants",
         82,
     );
-
-    let conn = lock_db(db)?;
-    let (speaker_ids, uncertain_flags) = assign_speakers(
-        app,
-        &conn,
-        interview_id,
-        &raw_segments,
-        &pcm,
-        expected_speaker_count,
-    )
-    .map_err(mark_error)?;
-
-    let new_segments = transcription::to_new_segments(raw_segments, &speaker_ids);
     emit_task_progress(
         app,
         interview_id,
@@ -476,15 +700,7 @@ fn transcribe_local(
         "Enregistrement des segments",
         96,
     );
-    let inserted_ids = db::segments::insert_batch(&conn, interview_id, &new_segments)?;
-    // insert_batch always writes 'raw'; segments the clusterer flagged as an
-    // uncertain speaker match get promoted to 'uncertain' rather than forcing
-    // silent confidence the diarization step doesn't actually have.
-    for (segment_id, uncertain) in inserted_ids.iter().zip(&uncertain_flags) {
-        if *uncertain {
-            db::segments::mark_uncertain(&conn, *segment_id)?;
-        }
-    }
+    let conn = lock_db(db)?;
     db::interviews::update_status(&conn, interview_id, "transcribed", None)?;
     diagnostics::log("INFO", "transcription: traitement termine");
     emit_task_progress(
@@ -498,60 +714,42 @@ fn transcribe_local(
     db::get_detail(&conn, interview_id)
 }
 
-/// Diarizes a whole interview's segments at once, one persistent `Clusterer`
-/// for the interview so speaker identity stays consistent across it.
-#[cfg(not(target_os = "android"))]
-fn assign_speakers(
-    app: &tauri::AppHandle,
-    conn: &rusqlite::Connection,
+#[tauri::command]
+fn stop_transcription(
+    transcription: tauri::State<TranscriptionState>,
     interview_id: i64,
-    raw_segments: &[transcription::RawSegment],
-    pcm: &[f32],
-    expected_speaker_count: Option<usize>,
-) -> Result<(Vec<i64>, Vec<bool>), AppError> {
-    let transcription::model::ModelStatus::Ready {
-        path: diarization_model_path,
-        ..
-    } = transcription::model::ensure_manifest(app, transcription::model::diarization_manifest()?)?;
-    let mut extractor = diarization::EmbeddingExtractor::load(Path::new(&diarization_model_path))?;
-    let mut clusterer = diarization::Clusterer::new(expected_speaker_count);
-    let assignments = raw_segments
-        .iter()
-        .map(|segment| {
-            let slice = diarization::slice_pcm_ms(pcm, segment.start_ms, segment.end_ms);
-            let embedding = extractor.extract(slice)?;
-            Ok(clusterer.assign(&embedding))
-        })
-        .collect::<Result<Vec<diarization::Assignment>, AppError>>()?;
-
-    let speakers: Vec<db::models::Speaker> = (1..=clusterer.speaker_count())
-        .map(|index| db::speakers::create_numbered(conn, interview_id, index))
-        .collect::<Result<_, _>>()?;
-    let speaker_ids = assignments
-        .iter()
-        .map(|assignment| speakers[assignment.speaker_index].id)
-        .collect();
-    let uncertain_flags = assignments.iter().map(|a| a.uncertain).collect();
-    Ok((speaker_ids, uncertain_flags))
+) -> Result<(), AppError> {
+    diagnostics::log("INFO", "stop_transcription");
+    let guard = transcription
+        .0
+        .lock()
+        .map_err(|_| AppError::Transcription("etat de transcription indisponible".into()))?;
+    match guard.as_ref() {
+        Some(active) if active.interview_id == interview_id => {
+            active
+                .stop_flag
+                .store(true, std::sync::atomic::Ordering::Relaxed);
+            Ok(())
+        }
+        _ => Err(AppError::Transcription(
+            "aucune transcription en cours pour cet entretien".into(),
+        )),
+    }
 }
 
-/// Diarization needs `ort`/`pyannote-rs`, which has no Android build at all
-/// (see docs/ARCHITECTURE.md "Diarisation") - Android falls back to the same
-/// single-speaker behavior Phase 1 already shipped and tested, rather than
-/// failing transcription entirely.
-#[cfg(target_os = "android")]
-fn assign_speakers(
-    _app: &tauri::AppHandle,
-    conn: &rusqlite::Connection,
-    interview_id: i64,
-    raw_segments: &[transcription::RawSegment],
-    _pcm: &[f32],
-    _expected_speaker_count: Option<usize>,
-) -> Result<(Vec<i64>, Vec<bool>), AppError> {
-    let speaker = db::speakers::create_numbered(conn, interview_id, 1)?;
-    let speaker_ids = vec![speaker.id; raw_segments.len()];
-    let uncertain_flags = vec![false; raw_segments.len()];
-    Ok((speaker_ids, uncertain_flags))
+#[tauri::command]
+fn list_resumable_posteriori(
+    db: tauri::State<DbState>,
+    transcription: tauri::State<TranscriptionState>,
+) -> Result<Vec<db::models::Interview>, AppError> {
+    let active_interview_id = transcription
+        .0
+        .lock()
+        .map_err(|_| AppError::Transcription("etat de transcription indisponible".into()))?
+        .as_ref()
+        .map(|active| active.interview_id);
+    let conn = lock_db(&db)?;
+    db::interviews::list_resumable_posteriori(&conn, active_interview_id)
 }
 
 #[tauri::command]
@@ -817,10 +1015,11 @@ fn run_recording_processing(
             Ok(transcriber) => transcriber,
             Err(err) => return report_recording_error(&app, interview_id, err),
         };
-    let mut assigner = match SpeakerAssigner::new(&diarization_model_path, expected_speaker_count) {
-        Ok(assigner) => assigner,
-        Err(err) => return report_recording_error(&app, interview_id, err),
-    };
+    let mut assigner =
+        match SpeakerAssigner::new(&diarization_model_path, expected_speaker_count, 0, false) {
+            Ok(assigner) => assigner,
+            Err(err) => return report_recording_error(&app, interview_id, err),
+        };
     consume_recording_chunks(
         chunks,
         |elapsed_ms, pcm| {
@@ -895,10 +1094,14 @@ enum SpeakerAssigner {
         extractor: diarization::EmbeddingExtractor,
         clusterer: diarization::Clusterer,
         speakers: Vec<db::models::Speaker>,
+        first_speaker_index: usize,
+        force_uncertain: bool,
     },
     #[cfg(target_os = "android")]
     SingleSpeaker {
         speaker: Option<db::models::Speaker>,
+        speaker_index: usize,
+        force_uncertain: bool,
     },
 }
 
@@ -907,12 +1110,16 @@ impl SpeakerAssigner {
     fn new(
         diarization_model_path: &str,
         expected_speaker_count: Option<usize>,
+        existing_speaker_count: usize,
+        force_uncertain: bool,
     ) -> Result<Self, AppError> {
         let extractor = diarization::EmbeddingExtractor::load(Path::new(diarization_model_path))?;
         Ok(Self::Diarizing {
             extractor,
             clusterer: diarization::Clusterer::new(expected_speaker_count),
             speakers: Vec::new(),
+            first_speaker_index: existing_speaker_count + 1,
+            force_uncertain,
         })
     }
 
@@ -920,8 +1127,14 @@ impl SpeakerAssigner {
     fn new(
         _diarization_model_path: &str,
         _expected_speaker_count: Option<usize>,
+        existing_speaker_count: usize,
+        force_uncertain: bool,
     ) -> Result<Self, AppError> {
-        Ok(Self::SingleSpeaker { speaker: None })
+        Ok(Self::SingleSpeaker {
+            speaker: None,
+            speaker_index: existing_speaker_count + 1,
+            force_uncertain,
+        })
     }
 
     fn assign_chunk(
@@ -937,6 +1150,8 @@ impl SpeakerAssigner {
                 extractor,
                 clusterer,
                 speakers,
+                first_speaker_index,
+                force_uncertain,
             } => {
                 let assignments = raw_segments
                     .iter()
@@ -948,24 +1163,35 @@ impl SpeakerAssigner {
                     })
                     .collect::<Result<Vec<diarization::Assignment>, AppError>>()?;
                 while speakers.len() < clusterer.speaker_count() {
-                    let index = speakers.len() + 1;
+                    let index = *first_speaker_index + speakers.len();
                     speakers.push(db::speakers::create_numbered(conn, interview_id, index)?);
                 }
                 let speaker_ids = assignments
                     .iter()
                     .map(|assignment| speakers[assignment.speaker_index].id)
                     .collect();
-                let uncertain_flags = assignments.iter().map(|a| a.uncertain).collect();
+                let uncertain_flags = assignments
+                    .iter()
+                    .map(|assignment| *force_uncertain || assignment.uncertain)
+                    .collect();
                 Ok((speaker_ids, uncertain_flags))
             }
             #[cfg(target_os = "android")]
-            Self::SingleSpeaker { speaker } => {
+            Self::SingleSpeaker {
+                speaker,
+                speaker_index,
+                force_uncertain,
+            } => {
                 if speaker.is_none() {
-                    *speaker = Some(db::speakers::create_numbered(conn, interview_id, 1)?);
+                    *speaker = Some(db::speakers::create_numbered(
+                        conn,
+                        interview_id,
+                        *speaker_index,
+                    )?);
                 }
                 let id = speaker.as_ref().expect("just set above").id;
                 let speaker_ids = vec![id; raw_segments.len()];
-                let uncertain_flags = vec![false; raw_segments.len()];
+                let uncertain_flags = vec![*force_uncertain; raw_segments.len()];
                 Ok((speaker_ids, uncertain_flags))
             }
         }
@@ -1182,6 +1408,7 @@ pub fn run() {
             let conn = db::open(&base.join("interviewscribe.sqlite3"))?;
             app.manage(DbState(Mutex::new(conn)));
             app.manage(RecordingState(Mutex::new(None)));
+            app.manage(TranscriptionState(Mutex::new(None)));
             // Lets the frontend play back an interview's own audio via
             // convertFileSrc() (re-listen feature) without widening the
             // asset protocol to the whole filesystem - only this app's
@@ -1206,6 +1433,9 @@ pub fn run() {
             ensure_whisper_model,
             list_available_models,
             transcribe_interview,
+            stop_transcription,
+            list_resumable_posteriori,
+            keep_posteriori_as_is,
             list_input_devices,
             start_recording,
             pause_recording,

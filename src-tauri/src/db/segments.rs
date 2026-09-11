@@ -43,6 +43,49 @@ pub fn insert_batch(
     Ok(ids)
 }
 
+/// Persists one posteriori chunk and advances its durable audio cursor in the
+/// same transaction. A crash can therefore never expose new text with an old
+/// cursor (which would make a resume transcribe that text a second time).
+pub fn insert_transcription_chunk(
+    conn: &Connection,
+    interview_id: i64,
+    segments: &[NewSegment],
+    uncertain_flags: &[bool],
+    cursor_ms: i64,
+) -> Result<Vec<i64>, AppError> {
+    if segments.len() != uncertain_flags.len() {
+        return Err(AppError::Transcription(
+            "nombre de statuts de diarisation incoherent".into(),
+        ));
+    }
+    let tx = conn.unchecked_transaction()?;
+    let mut ids = Vec::with_capacity(segments.len());
+    {
+        let mut stmt = tx.prepare(
+            "INSERT INTO segment (interview_id, speaker_id, start_ms, end_ms, raw_text, confidence, status)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        )?;
+        for (segment, uncertain) in segments.iter().zip(uncertain_flags) {
+            stmt.execute(params![
+                interview_id,
+                segment.speaker_id,
+                segment.start_ms,
+                segment.end_ms,
+                segment.raw_text,
+                segment.confidence,
+                if *uncertain { "uncertain" } else { "raw" },
+            ])?;
+            ids.push(tx.last_insert_rowid());
+        }
+    }
+    tx.execute(
+        "UPDATE interview SET transcription_cursor_ms = ?1, updated_at = ?2 WHERE id = ?3",
+        params![cursor_ms.max(0), super::now_epoch_secs(), interview_id],
+    )?;
+    tx.commit()?;
+    Ok(ids)
+}
+
 /// Flags a segment's speaker attribution as uncertain (diarization's best
 /// guess had too little margin over the runner-up) rather than forcing
 /// silent confidence - see docs/ARCHITECTURE.md "Diarisation".
@@ -203,6 +246,42 @@ mod tests {
 
         let capped = list_recent_for_interview(&conn, interview_id, usize::MAX).unwrap();
         assert_eq!(capped.len(), 200);
+    }
+
+    #[test]
+    fn transcription_chunk_advances_cursor_even_without_text() {
+        let (conn, interview_id, _) = setup();
+        insert_transcription_chunk(&conn, interview_id, &[], &[], 30_000).unwrap();
+        assert_eq!(
+            interviews::transcription_cursor_ms(&conn, interview_id).unwrap(),
+            30_000
+        );
+    }
+
+    #[test]
+    fn transcription_chunk_persists_text_status_and_cursor_atomically() {
+        let (conn, interview_id, speaker_id) = setup();
+        insert_transcription_chunk(
+            &conn,
+            interview_id,
+            &[NewSegment {
+                speaker_id: Some(speaker_id),
+                start_ms: 0,
+                end_ms: 900,
+                raw_text: "Texte brut".into(),
+                confidence: Some(0.8),
+            }],
+            &[true],
+            1_000,
+        )
+        .unwrap();
+        let saved = list_for_interview(&conn, interview_id).unwrap();
+        assert_eq!(saved[0].raw_text, "Texte brut");
+        assert_eq!(saved[0].status, "uncertain");
+        assert_eq!(
+            interviews::transcription_cursor_ms(&conn, interview_id).unwrap(),
+            1_000
+        );
     }
 
     #[test]
