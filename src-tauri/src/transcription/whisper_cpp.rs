@@ -444,7 +444,9 @@ mod tests {
         let mut out = Vec::new();
         for range in ranges {
             let chunk = &pcm[range.clone()];
-            let segments = transcriber.transcribe(chunk, None).expect("transcribe chunk");
+            let segments = transcriber
+                .transcribe(chunk, None)
+                .expect("transcribe chunk");
             for segment in segments {
                 out.push(crate::evaluation::TimedText {
                     start_ms: segment.start_ms + offset_ms,
@@ -558,14 +560,20 @@ mod tests {
             straight_through.len()
         );
         for segment in &straight_through {
-            println!("[{} - {}] {}", segment.start_ms, segment.end_ms, segment.text);
+            println!(
+                "[{} - {}] {}",
+                segment.start_ms, segment.end_ms, segment.text
+            );
         }
         println!(
             "-- stopped after chunk 1, resumed ({} segments, {resumed_total_ms}ms total) --",
             stop_then_resume.len()
         );
         for segment in &stop_then_resume {
-            println!("[{} - {}] {}", segment.start_ms, segment.end_ms, segment.text);
+            println!(
+                "[{} - {}] {}",
+                segment.start_ms, segment.end_ms, segment.text
+            );
         }
 
         let straight_text: String = straight_through
@@ -688,7 +696,8 @@ mod tests {
             cursor_ms = advanced_ms;
         }
         // Final resume: whatever is left after both simulated stops.
-        let final_ranges = crate::transcription::chunk_pcm_ranges(cursor_pcm, max_chunk_ms, silence_ms);
+        let final_ranges =
+            crate::transcription::chunk_pcm_ranges(cursor_pcm, max_chunk_ms, silence_ms);
         let (final_segments, final_total_ms) = transcribe_ranges(
             &transcriber,
             cursor_pcm,
@@ -703,14 +712,20 @@ mod tests {
             straight_through.len()
         );
         for segment in &straight_through {
-            println!("[{} - {}] {}", segment.start_ms, segment.end_ms, segment.text);
+            println!(
+                "[{} - {}] {}",
+                segment.start_ms, segment.end_ms, segment.text
+            );
         }
         println!(
             "-- two stop/resume cycles ({} segments, {final_total_ms}ms total) --",
             multi_cycle.len()
         );
         for segment in &multi_cycle {
-            println!("[{} - {}] {}", segment.start_ms, segment.end_ms, segment.text);
+            println!(
+                "[{} - {}] {}",
+                segment.start_ms, segment.end_ms, segment.text
+            );
         }
 
         assert_eq!(
