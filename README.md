@@ -6,13 +6,13 @@ Tout tourne en local sur la machine de l'utilisateur. Aucune connexion reseau, a
 
 ## Telecharger
 
-Version publique actuelle: [InterviewScribe v0.1.3](https://github.com/guillaumeboileaupro/InterviewScribe/releases/tag/v0.1.3).
+Version publique actuelle: [InterviewScribe v0.2.0](https://github.com/guillaumeboileaupro/InterviewScribe/releases/tag/v0.2.0).
 
 | Plateforme | Fichier a telecharger | Installation |
 | --- | --- | --- |
-| Windows | [`InterviewScribe_0.1.3_x64-setup.exe`](https://github.com/guillaumeboileaupro/InterviewScribe/releases/download/v0.1.3/InterviewScribe_0.1.3_x64-setup.exe) | Lancer l'installateur et suivre les etapes. |
-| Linux (Debian/Ubuntu) | [`InterviewScribe_0.1.3_amd64.deb`](https://github.com/guillaumeboileaupro/InterviewScribe/releases/download/v0.1.3/InterviewScribe_0.1.3_amd64.deb) | `sudo dpkg -i InterviewScribe_0.1.3_amd64.deb` (ou double-clic dans le gestionnaire de paquets). |
-| Android | [`InterviewScribe_0.1.3_arm64-v8a.apk`](https://github.com/guillaumeboileaupro/InterviewScribe/releases/download/v0.1.3/InterviewScribe_0.1.3_arm64-v8a.apk) | Telecharger sur l'appareil, autoriser l'installation depuis une source inconnue si demande, puis ouvrir pour installer. |
+| Windows | [`InterviewScribe_0.2.0_x64-setup.exe`](https://github.com/guillaumeboileaupro/InterviewScribe/releases/download/v0.2.0/InterviewScribe_0.2.0_x64-setup.exe) | Lancer l'installateur et suivre les etapes. |
+| Linux (Debian/Ubuntu) | [`InterviewScribe_0.2.0_amd64.deb`](https://github.com/guillaumeboileaupro/InterviewScribe/releases/download/v0.2.0/InterviewScribe_0.2.0_amd64.deb) | `sudo dpkg -i InterviewScribe_0.2.0_amd64.deb` (ou double-clic dans le gestionnaire de paquets). |
+| Android | [`InterviewScribe_0.2.0_arm64-v8a.apk`](https://github.com/guillaumeboileaupro/InterviewScribe/releases/download/v0.2.0/InterviewScribe_0.2.0_arm64-v8a.apk) | Telecharger sur l'appareil, autoriser l'installation depuis une source inconnue si demande, puis ouvrir pour installer. |
 
 Aucun git, aucune compilation, aucune connexion reseau n'est necessaire pour installer ou utiliser l'application: le fichier telecharge est autosuffisant, avec les modeles deja integres a l'interieur.
 
@@ -23,7 +23,7 @@ L'APK Android n'est pas distribue via le Play Store: il est signe avec une cle d
 Chaque fichier est accompagne d'une somme de controle `.sha256`. Pour la verifier avant installation:
 
 ```bash
-sha256sum -c InterviewScribe_0.1.0_amd64.deb.sha256
+sha256sum -c InterviewScribe_0.2.0_amd64.deb.sha256
 ```
 
 (remplacer par le nom du fichier correspondant a votre plateforme).
