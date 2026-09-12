@@ -118,11 +118,21 @@ utilisateur final, l'ecart attendu est plus important (voir l'ecart
 CPU/GPU deja documente par l'article CNRS cite plus haut).
 
 La compilation de `ggml-vulkan` echoue avec le SDK Vulkan fourni par les
-depots Ubuntu 22.04 (symboles `VK_KHR_cooperative_matrix`/
-`VK_EXT_layer_settings` absents, ajoutes a la specification apres cette
-version) - resolu en installant le depot officiel LunarG (`vulkan-sdk`,
-version 1.4.313.0 verifiee) plutot que le paquet distribution, en local
-comme dans `.github/workflows/ci.yml` et `release.yml`.
+depots Ubuntu (symboles `VK_KHR_cooperative_matrix`/`VK_EXT_layer_settings`
+absents, ajoutes a la specification apres cette version) - resolu en
+installant le depot officiel LunarG (`vulkan-sdk`) plutot que le paquet
+distribution, en local comme dans `.github/workflows/ci.yml` et
+`release.yml`. Cote Linux, aucune version n'est epinglee: le depot LunarG
+ne garde qu'une fenetre glissante de versions recentes (constate
+reellement - la version disponible a change entre deux verifications a
+quelques minutes d'intervalle pendant cette session), donc `apt-get
+install vulkan-sdk` prend simplement ce qui est disponible au moment du
+run. Cote Windows, l'installeur est en revanche epingle
+(version 1.4.309.0) car les numeros de version n'y sont pas tous
+reellement telechargeables : le premier run CI reel a echoue avec la
+version initialement choisie (1.4.313.0, HTTP 404 - jamais publiee pour
+Windows malgre son existence cote Linux), corrige avec une version dont le
+telechargement reel a ete verifie avant de l'epingler.
 
 Limites assumees et non testees reellement:
 
@@ -267,17 +277,25 @@ n'est jamais assimilee a zero.
 
 ## Modele fourni avec l’application
 
-Le profil par defaut est **Whisper Base multilingue quantifie Q5_1**. Small et
-Large v3 Turbo Q5_0 restent fournis et selectionnables explicitement. Ce choix
-evite qu'une courte transcription paraisse bloquee sur une machine CPU: lors du
-diagnostic du 10 septembre 2026, Base a traite 26,9 s d'audio en 13,0 s, tandis
-que Large v3 Turbo depassait 90 s sur le meme poste. Les revisions, tailles et
-empreintes SHA-256 sont epinglees dans les manifestes de
-`src-tauri/resources/models/`. La licence MIT de Whisper est livree avec eux.
+Le profil par defaut est **Whisper Base multilingue quantifie Q5_1**. Tiny,
+Small, Medium et Large v3 Turbo Q5_0 restent fournis et selectionnables
+explicitement (12 septembre 2026 : Tiny et Medium ajoutes pour combler les
+deux extremes manquants - le plus rapide et un palier intermediaire avant
+Large v3 Turbo). Ce choix de defaut evite qu'une courte transcription
+paraisse bloquee sur une machine CPU: lors du diagnostic du 10 septembre
+2026, Base a traite 26,9 s d'audio en 13,0 s, tandis que Large v3 Turbo
+depassait 90 s sur le meme poste (voir aussi "Acceleration GPU" plus haut,
+qui reduit cet ecart sur une machine avec GPU compatible Vulkan). Les
+revisions, tailles et empreintes SHA-256 sont epinglees dans les manifestes
+de `src-tauri/resources/models/`, chacune verifiee reellement par
+telechargement et `sha256sum` avant d'etre epinglee, pas seulement copiee
+depuis les metadonnees LFS de la source. La licence MIT de Whisper est
+livree avec eux.
 
-Tous les profils fournis sont multilingues. Base privilegie la reactivite;
-Small et Large v3 Turbo permettent de privilegier la precision lorsque le temps
-de calcul et la memoire disponibles le permettent.
+Tous les profils fournis sont multilingues. Tiny et Base privilegient la
+reactivite; Small, Medium et Large v3 Turbo permettent de privilegier la
+precision lorsque le temps de calcul et la memoire disponibles le
+permettent.
 
 Les paquets Windows, Linux et Android incluent le modele dans les ressources
 Tauri. L’application ne telecharge aucun modele : le producteur du paquet lance
