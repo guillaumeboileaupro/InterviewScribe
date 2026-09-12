@@ -97,18 +97,6 @@ jobs:
           node-version: 22
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install Vulkan SDK
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $version = "1.4.309.0"
-          $installer = "$env:RUNNER_TEMP\VulkanSDK-Installer.exe"
-          Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/$version/windows/VulkanSDK-$version-Installer.exe" -OutFile $installer
-          Start-Process -FilePath $installer -ArgumentList "--accept-licenses --default-answer --confirm-command install" -Wait
-          $sdkPath = "C:\VulkanSDK\$version"
-          if (-not (Test-Path $sdkPath)) { throw "Vulkan SDK install did not produce $sdkPath" }
-          echo "VULKAN_SDK=$sdkPath" >> $env:GITHUB_ENV
-          echo "$sdkPath\Bin" >> $env:GITHUB_PATH
       - run: pnpm install --frozen-lockfile
       - name: Prepare bundled Whisper models (checksum verified)
         run: pnpm models:prepare

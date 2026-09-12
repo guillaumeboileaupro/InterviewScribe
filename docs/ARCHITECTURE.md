@@ -278,25 +278,33 @@ n'est jamais assimilee a zero.
 ## Modele fourni avec l’application
 
 Le profil par defaut est **Whisper Base multilingue quantifie Q5_1**. Tiny,
-Small, Medium, Large v3 Turbo et Large v3 (tous Q5_0/Q5_1) restent fournis
-et selectionnables explicitement (12 septembre 2026 : Tiny et Medium
-ajoutes pour combler les deux extremes manquants - le plus rapide et un
-palier intermediaire avant Large v3 Turbo ; Large v3 ajoute ensuite comme
-palier de precision maximale, plus lent que sa variante Turbo mais legerement
-plus precis sur certaines langues, distillation oblige). Ce choix de defaut
-evite qu'une courte transcription paraisse bloquee sur une machine CPU: lors
-du diagnostic du 10 septembre 2026, Base a traite 26,9 s d'audio en 13,0 s,
-tandis que Large v3 Turbo depassait 90 s sur le meme poste (voir aussi
-"Acceleration GPU" plus haut, qui reduit cet ecart sur une machine avec GPU
-compatible Vulkan). Les revisions, tailles et empreintes SHA-256 sont
-epinglees dans les manifestes de `src-tauri/resources/models/`, chacune
-verifiee reellement par telechargement et `sha256sum` avant d'etre
-epinglee, pas seulement copiee depuis les metadonnees LFS de la source. La
-licence MIT de Whisper est livree avec eux.
+Small, Medium et Large v3 Turbo (Q5_0/Q5_1) restent fournis et
+selectionnables explicitement (12 septembre 2026 : Tiny et Medium ajoutes
+pour combler les deux extremes manquants - le plus rapide et un palier
+intermediaire avant Large v3 Turbo). Ce choix de defaut evite qu'une courte
+transcription paraisse bloquee sur une machine CPU: lors du diagnostic du
+10 septembre 2026, Base a traite 26,9 s d'audio en 13,0 s, tandis que
+Large v3 Turbo depassait 90 s sur le meme poste (voir aussi "Acceleration
+GPU" plus haut, qui reduit cet ecart sur une machine avec GPU compatible
+Vulkan). Les revisions, tailles et empreintes SHA-256 sont epinglees dans
+les manifestes de `src-tauri/resources/models/`, chacune verifiee
+reellement par telechargement et `sha256sum` avant d'etre epinglee, pas
+seulement copiee depuis les metadonnees LFS de la source. La licence MIT
+de Whisper est livree avec eux.
+
+Le Large v3 complet (non-turbo, ~1,08 Go) a ete ajoute puis retire le
+12 septembre 2026 dans la meme session : l'embarquer en plus des cinq
+autres a fait depasser aux trois paquets (.deb, installateur NSIS, APK) la
+limite reelle de GitHub Releases de 2 Gio par fichier, provoquant l'echec
+complet d'une tentative de publication v0.3.0
+("size must be less than 2147483648" sur les trois plateformes). Non
+reintroduit tant qu'aucune strategie de distribution ne permet de
+depasser cette limite (paquets separes, telechargement optionnel post-
+installation, etc. - aucune de ces pistes n'est engagee).
 
 Tous les profils fournis sont multilingues. Tiny et Base privilegient la
-reactivite; Small, Medium, Large v3 Turbo et Large v3 permettent de
-privilegier la precision lorsque le temps de calcul et la memoire disponibles le
+reactivite; Small, Medium et Large v3 Turbo permettent de privilegier la
+precision lorsque le temps de calcul et la memoire disponibles le
 permettent.
 
 Les paquets Windows, Linux et Android incluent le modele dans les ressources

@@ -38,13 +38,6 @@ pub fn manifest() -> Result<ModelManifest, AppError> {
         .map_err(|err| AppError::Model(format!("description du modele invalide: {err}")))
 }
 
-fn large_v3_manifest() -> Result<ModelManifest, AppError> {
-    serde_json::from_str(include_str!(
-        "../../resources/models/whisper-large-v3-manifest.json"
-    ))
-    .map_err(|err| AppError::Model(format!("description du modele invalide: {err}")))
-}
-
 fn medium_manifest() -> Result<ModelManifest, AppError> {
     serde_json::from_str(include_str!(
         "../../resources/models/whisper-medium-manifest.json"
@@ -77,18 +70,16 @@ fn tiny_manifest() -> Result<ModelManifest, AppError> {
 /// docs/PRODUCT.md): id is stable across releases and is what the frontend
 /// sends back to select a model - never the display name, which can change.
 /// Ordered smallest/fastest to largest/most accurate for the picker.
-const WHISPER_MODEL_IDS: [&str; 6] = [
-    "tiny",
-    "base",
-    "small",
-    "medium",
-    "large-v3-turbo",
-    "large-v3",
-];
+/// Deliberately does not include the full Large v3 (non-turbo, ~1.03GiB):
+/// bundling it alongside the rest pushed every packaged asset (.deb, NSIS
+/// installer, APK) past GitHub Releases' real 2GiB per-file limit - a real
+/// v0.3.0 release attempt failed on all three platforms with
+/// "size must be less than 2147483648" before this was caught. Large v3
+/// Turbo remains as the largest/most-accurate bundled option.
+const WHISPER_MODEL_IDS: [&str; 5] = ["tiny", "base", "small", "medium", "large-v3-turbo"];
 
 fn whisper_manifest_by_id(id: &str) -> Result<ModelManifest, AppError> {
     match id {
-        "large-v3" => large_v3_manifest(),
         "large-v3-turbo" => manifest(),
         "medium" => medium_manifest(),
         "small" => small_manifest(),
@@ -350,20 +341,10 @@ mod tests {
     }
 
     #[test]
-    fn lists_all_six_bundled_whisper_models_with_valid_manifests() {
+    fn lists_all_five_bundled_whisper_models_with_valid_manifests() {
         let models = list_whisper_models().unwrap();
         let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
-        assert_eq!(
-            ids,
-            [
-                "tiny",
-                "base",
-                "small",
-                "medium",
-                "large-v3-turbo",
-                "large-v3"
-            ]
-        );
+        assert_eq!(ids, ["tiny", "base", "small", "medium", "large-v3-turbo"]);
         for model in &models {
             assert!(model.size_mb > 0);
             assert!(!model.name.is_empty());

@@ -50,19 +50,28 @@ wdio-e2e = ["dep:tauri-plugin-wdio-webdriver", "dep:tauri-plugin-wdio"]
 [target.'cfg(target_os = "android")'.dependencies]
 tauri-plugin-fs = "2"
 
-[target.'cfg(not(target_os = "android"))'.dependencies]
-# GPU acceleration (Vulkan) is desktop-only for now: verified locally on this
-# session's real Intel iGPU (2.13x faster than CPU on the `base` model - real
+[target.'cfg(target_os = "linux")'.dependencies]
+# GPU acceleration (Vulkan) is Linux-only for now: verified for real on this
+# session's own Intel iGPU (2.13x faster than CPU on the `base` model - real
 # GPU engine utilization confirmed via `intel_gpu_top`, not inferred from
-# timing alone), but Android cross-compilation of ggml-vulkan is unverified
-# and Android already has a track record of GPU/native-dependency gaps in
-# this project (see the ort/pyannote-rs note below) - scoped to desktop until
-# someone can actually test an Android build with it. whisper-rs enables
+# timing alone). Originally scoped to "desktop" (Linux + Windows), but the
+# first real v0.3.0 release attempt failed the Windows build outright: a
+# CMake/MSVC error building ggml-vulkan's shader-generator subproject
+# ("Performing Test CMAKE_HAVE_LIBC_PTHREAD - Failed"), with no Windows
+# machine available here to iterate on a fix. Narrowed to Linux rather than
+# ship a guessed fix for a platform this can't actually be tested on -
+# see docs/ARCHITECTURE.md "Acceleration GPU". Android cross-compilation is
+# separately unverified and was never attempted. whisper-rs enables
 # `use_gpu` by default whenever any GPU feature is compiled in, and ggml
 # falls back to its always-present CPU backend when no Vulkan device is
 # found (verified by reading ggml-vulkan.cpp's device-enumeration path, not
 # by physically testing a GPU-less machine).
 whisper-rs = { version = "0.16", features = ["vulkan"] }
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+whisper-rs = "0.16"
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
 # Diarization (pyannote-rs/ort) is desktop-only: ort-sys's prebuilt-binary
 # table publishes no Android artifact at all (verified by reading its
 # build.rs - not a missing NDK/cmake toolchain issue, an actual gap in what

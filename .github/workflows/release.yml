@@ -33,17 +33,19 @@ jobs:
       - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev sqlite3 xvfb
-      # GPU acceleration (whisper-rs "vulkan" feature, desktop-only - see
-      # src-tauri/Cargo.toml): needs a Vulkan SDK new enough to build
-      # whisper.cpp's ggml-vulkan backend (this runner's distro package is
-      # too old - verified by a real failed build locally: missing
-      # VK_KHR_cooperative_matrix/VK_EXT_layer_settings symbols added well
-      # after Ubuntu 22.04's package). LunarG's own repository, not a
-      # third-party action. Confirmed working locally on Linux with real
-      # GPU utilization (intel_gpu_top) and a measured 2.13x speedup on an
-      # Intel iGPU; the Windows steps below follow the same vendor-documented
-      # silent-install approach but have not yet been confirmed by a real
-      # Windows CI run - watch this job's first run after this change.
+      # GPU acceleration (whisper-rs "vulkan" feature) is Linux-only - see
+      # src-tauri/Cargo.toml. Originally attempted on Windows too, but the
+      # first real v0.3.0 release build failed there outright (a CMake/MSVC
+      # error in ggml-vulkan's shader-generator subproject, with no Windows
+      # machine available here to iterate on a fix) - narrowed to the one
+      # platform this was actually verified on rather than ship a guessed
+      # fix. Needs a Vulkan SDK new enough to build ggml-vulkan (this
+      # runner's distro package is too old - verified by a real failed build
+      # locally: missing VK_KHR_cooperative_matrix/VK_EXT_layer_settings
+      # symbols added well after Ubuntu 22.04's package). LunarG's own
+      # repository, not a third-party action. Confirmed working locally with
+      # real GPU utilization (intel_gpu_top) and a measured 2.13x speedup on
+      # an Intel iGPU.
       - name: Install Vulkan SDK (Linux)
         if: matrix.platform == 'ubuntu-22.04'
         run: |
@@ -56,19 +58,6 @@ jobs:
           # dedicated SDK tree - whisper-rs-sys's build.rs still requires
           # VULKAN_SDK to be set to find them (verified locally).
           echo "VULKAN_SDK=/usr" >> "$GITHUB_ENV"
-      - name: Install Vulkan SDK (Windows)
-        if: matrix.platform == 'windows-latest'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $version = "1.4.309.0"
-          $installer = "$env:RUNNER_TEMP\VulkanSDK-Installer.exe"
-          Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/$version/windows/VulkanSDK-$version-Installer.exe" -OutFile $installer
-          Start-Process -FilePath $installer -ArgumentList "--accept-licenses --default-answer --confirm-command install" -Wait
-          $sdkPath = "C:\VulkanSDK\$version"
-          if (-not (Test-Path $sdkPath)) { throw "Vulkan SDK install did not produce $sdkPath" }
-          echo "VULKAN_SDK=$sdkPath" >> $env:GITHUB_ENV
-          echo "$sdkPath\Bin" >> $env:GITHUB_PATH
       - run: pnpm install --frozen-lockfile
       - name: Prepare bundled Whisper model (checksum verified)
         run: pnpm models:prepare
