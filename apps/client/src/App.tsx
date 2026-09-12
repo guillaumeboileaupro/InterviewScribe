@@ -120,6 +120,31 @@ function ChunkProgressRow({ progress }: { progress: ChunkProgress }) {
   );
 }
 
+type ModelVerifyProgress = {
+  model_name: string;
+  percent: number;
+};
+
+// Real, byte-based progress for the SHA-256 verification Reglages runs on
+// the bundled model every time - previously a static "Verification..."
+// label with no feedback, which reads as a hang once models grew past
+// ~500 Mo (Medium/Large v3 added later). One event per whole percentage
+// point from the backend, not per read chunk, so this stays cheap to render.
+function ModelVerifyProgressRow({
+  progress,
+}: {
+  progress: ModelVerifyProgress;
+}) {
+  return (
+    <div className="modelVerifyProgress" role="status">
+      <span className="modelVerifyProgressLabel">
+        Vérification de {progress.model_name}… {progress.percent}%
+      </span>
+      <progress value={progress.percent} max={100} />
+    </div>
+  );
+}
+
 function LiveTranscription({ segments }: { segments: Segment[] }) {
   const textRef = useRef<HTMLDivElement>(null);
   const followLatestRef = useRef(true);
@@ -250,6 +275,8 @@ export default function App() {
 
   const [modelStatus, setModelStatus] = useState<ModelStatus | null>(null);
   const [modelError, setModelError] = useState<string | null>(null);
+  const [modelVerifyProgress, setModelVerifyProgress] =
+    useState<ModelVerifyProgress | null>(null);
 
   const [showCleaned, setShowCleaned] = useState(false);
   const [cleanupDiffs, setCleanupDiffs] = useState<Record<number, DiffPart[]>>(
@@ -369,7 +396,8 @@ export default function App() {
     if (page === "settings") {
       ensureWhisperModel()
         .then(setModelStatus)
-        .catch((err) => setModelError(String(err)));
+        .catch((err) => setModelError(String(err)))
+        .finally(() => setModelVerifyProgress(null));
       readRecentLogs()
         .then((text) => {
           setDiagnosticsText(text);
@@ -434,6 +462,12 @@ export default function App() {
         setChunkProgress(event.payload);
       },
     );
+    const unlistenModelVerify = listen<ModelVerifyProgress>(
+      "model-verify-progress",
+      (event) => {
+        setModelVerifyProgress(event.payload);
+      },
+    );
     return () => {
       // Fire-and-forget: nothing meaningful to do if unregistering a
       // listener fails during teardown (e.g. the window is already closing).
@@ -442,6 +476,7 @@ export default function App() {
       unlistenError.then((unlisten) => unlisten()).catch(() => {});
       unlistenTaskProgress.then((unlisten) => unlisten()).catch(() => {});
       unlistenChunkProgress.then((unlisten) => unlisten()).catch(() => {});
+      unlistenModelVerify.then((unlisten) => unlisten()).catch(() => {});
     };
   }, []);
 
@@ -2052,7 +2087,13 @@ export default function App() {
                   </>
                 )}
                 {!modelStatus && !modelError && (
-                  <p role="status">Vérification du modèle intégré…</p>
+                  <>
+                    {modelVerifyProgress ? (
+                      <ModelVerifyProgressRow progress={modelVerifyProgress} />
+                    ) : (
+                      <p role="status">Vérification du modèle intégré…</p>
+                    )}
+                  </>
                 )}
                 <p className="muted">
                   Aucun téléchargement à effectuer. Le modèle est fourni avec

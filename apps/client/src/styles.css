@@ -533,6 +533,18 @@ footer {
 .chunkProgressRow progress {
   width: 100%;
 }
+.modelVerifyProgress {
+  margin-top: 4px;
+}
+.modelVerifyProgressLabel {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.modelVerifyProgress progress {
+  width: 100%;
+}
 .liveTranscription {
   margin-top: 16px;
   padding: 16px;

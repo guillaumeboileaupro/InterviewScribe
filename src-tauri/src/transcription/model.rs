@@ -9,9 +9,21 @@ use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 use crate::error::AppError;
+
+/// Emitted as `"model-verify-progress"` while a bundled model's SHA-256 is
+/// (re)computed - the file is only ever read from local disk, never
+/// downloaded here, but hashing up to ~1GB still takes long enough that a
+/// static "Verification..." label with no feedback reads as a hang. Throttled
+/// to one event per whole percentage point, not per read chunk, so even the
+/// largest bundled model emits at most ~100 events.
+#[derive(Serialize, Clone)]
+struct ModelVerifyProgress {
+    model_name: String,
+    percent: u8,
+}
 
 #[derive(Debug, Deserialize)]
 pub struct ModelManifest {
@@ -173,7 +185,16 @@ pub fn ensure_manifest(
                 .join("resources/models")
                 .join(&model.file)
         };
-        verify_model(&resource, &model).map_err(|err| AppError::Model(format!(
+        verify_model_reporting(&resource, &model, |percent| {
+            let _ = app.emit(
+                "model-verify-progress",
+                ModelVerifyProgress {
+                    model_name: model.name.clone(),
+                    percent,
+                },
+            );
+        })
+        .map_err(|err| AppError::Model(format!(
             "Le modele integre {} est absent ou invalide. Reinstallez le paquet complet. En developpement, executez pnpm models:prepare. {err}", model.name
         )))?;
         resource
@@ -235,25 +256,55 @@ fn install_bundled(
     result
 }
 
+// Only called without progress reporting from the Android install path and
+// tests - the desktop path (`ensure_manifest`) always goes through
+// `verify_model_reporting` directly for real UI feedback.
+#[cfg(any(target_os = "android", test))]
 fn verify_model(path: &Path, model: &ModelManifest) -> Result<(), AppError> {
+    verify_model_reporting(path, model, |_| {})
+}
+
+/// Same check as `verify_model`, plus a callback invoked with a 0-100
+/// percentage as the hash computation progresses - used by `ensure_manifest`
+/// to give the desktop UI real feedback instead of a static label.
+fn verify_model_reporting(
+    path: &Path,
+    model: &ModelManifest,
+    on_progress: impl FnMut(u8),
+) -> Result<(), AppError> {
     if std::fs::metadata(path)?.len() != model.size_bytes {
         return Err(AppError::Model(
             "taille du modele integre incorrecte".into(),
         ));
     }
-    verify_checksum(path, &model.sha256)
+    verify_checksum_reporting(path, &model.sha256, model.size_bytes, on_progress)
 }
 
-pub fn verify_checksum(path: &Path, expected_hex: &str) -> Result<(), AppError> {
+fn verify_checksum_reporting(
+    path: &Path,
+    expected_hex: &str,
+    total_bytes: u64,
+    mut on_progress: impl FnMut(u8),
+) -> Result<(), AppError> {
     let mut file = std::fs::File::open(path)?;
     let mut hasher = Sha256::new();
     let mut buffer = [0_u8; 64 * 1024];
+    let mut read_bytes = 0_u64;
+    let mut last_percent = 0_u8;
     loop {
         let count = file.read(&mut buffer)?;
         if count == 0 {
             break;
         }
         hasher.update(&buffer[..count]);
+        read_bytes += count as u64;
+        let percent = (read_bytes.min(total_bytes) * 100)
+            .checked_div(total_bytes)
+            .unwrap_or(100) as u8;
+        if percent != last_percent {
+            last_percent = percent;
+            on_progress(percent);
+        }
     }
     let actual: String = hasher
         .finalize()
