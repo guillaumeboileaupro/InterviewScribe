@@ -83,11 +83,13 @@ Critere de sortie: une APK signee, installable sur un appareil arm64-v8a, capabl
 
 ## Definition de termine
 
-Release candidate actuelle : `v0.2.0` (transcription a posteriori segmentee,
-arretable et reprenable - voir `docs/TRANSCRIPTION_RESUME_PLAN.md`). Son
-workflow doit produire et tester le paquet Debian, l'installateur NSIS
-Windows et l'APK arm64-v8a avant publication. Les resultats natifs mettront
-a jour les validations encore ouvertes de la section 7 dans
+Release candidate actuelle : `v0.3.0` (acceleration GPU Vulkan sur bureau,
+six modeles Whisper selectionnables au lieu de trois, progression reelle
+pendant la verification du modele integre - voir `docs/ARCHITECTURE.md`
+"Acceleration GPU" et "Modele fourni avec l'application"). Son workflow doit
+produire et tester le paquet Debian, l'installateur NSIS Windows et l'APK
+arm64-v8a avant publication. Les resultats natifs mettront a jour les
+validations encore ouvertes de la section 7 dans
 `TEST_IMPLEMENTATION_PLAN.md`.
 
 Une tache n'est terminee que si elle comporte des tests pertinents, une documentation a jour, aucune donnee sensible dans les traces et une validation sur la plateforme concernee.
