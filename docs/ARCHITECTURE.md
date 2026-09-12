@@ -99,6 +99,46 @@ la suite de la numérotation existante et leurs attributions sont marquées
 - Sur Android, privilegier les modeles quantifies et mesurer memoire, batterie et temperature.
 - Inference via `whisper-rs` (bindings whisper.cpp/GGML). Sa compilation croisee Android necessite `cmake` et `clang` installes, ainsi que la variable `CMAKE_TOOLCHAIN_FILE` pointant vers `android.toolchain.cmake` du NDK (sinon CMake echoue avec "Neither the NDK or a standalone toolchain was found"). Utiliser `scripts/tauri-android.sh` (au lieu de `pnpm tauri android ...` directement) qui detecte le NDK installe et charge `scripts/android-toolchain.cmake`, en local comme en CI. Ce fichier mappe la cible Cargo vers l’ABI Android (ARM64, ARMv7, x86 ou x86_64) avant de charger la toolchain NDK; sans ce mapping, le NDK peut compiler en ARMv7 meme pour une cible Rust ARM64.
 
+### Acceleration GPU (Vulkan, bureau uniquement, 12 septembre 2026)
+
+`whisper-rs` est compile avec sa fonctionnalite `vulkan` sur bureau
+(`[target.'cfg(not(target_os = "android"))'.dependencies]` dans
+`src-tauri/Cargo.toml`), qui active `use_gpu: true` par defaut cote
+`whisper-rs` des qu'une fonctionnalite GPU quelconque est compilee -
+aucun changement de code applicatif necessaire, `WhisperCppTranscriber`
+utilise deja `WhisperContextParameters::default()`.
+
+Verifie reellement, pas suppose: sur le GPU integre Intel (UHD Graphics,
+CometLake-H) de ce poste, le moteur de rendu/calcul est observe a 75-98%
+d'utilisation pendant la transcription (`intel_gpu_top`), et un
+comparatif controle dans le meme processus (memes modele et audio, GPU
+puis CPU forces l'un apres l'autre) mesure **2,13x plus rapide** avec le
+GPU sur le modele `base`. Sur un GPU dedie plus puissant chez un
+utilisateur final, l'ecart attendu est plus important (voir l'ecart
+CPU/GPU deja documente par l'article CNRS cite plus haut).
+
+La compilation de `ggml-vulkan` echoue avec le SDK Vulkan fourni par les
+depots Ubuntu 22.04 (symboles `VK_KHR_cooperative_matrix`/
+`VK_EXT_layer_settings` absents, ajoutes a la specification apres cette
+version) - resolu en installant le depot officiel LunarG (`vulkan-sdk`,
+version 1.4.313.0 verifiee) plutot que le paquet distribution, en local
+comme dans `.github/workflows/ci.yml` et `release.yml`.
+
+Limites assumees et non testees reellement:
+
+- Cote secours (absence de GPU compatible): `ggml-vulkan.cpp` journalise
+  "No devices found" et ne bloque pas l'inference (verifie en lisant le
+  code d'enumeration des peripheriques, le backend CPU restant toujours
+  compile) - jamais verifie sur une machine reellement depourvue de GPU
+  compatible Vulkan.
+- Windows: memes etapes d'installation que Linux (installeur officiel
+  LunarG, silencieux), mais **jamais confirme par une vraie execution CI
+  Windows** au moment d'ecrire ceci - a surveiller au premier run reel.
+- Android: explicitement exclu de la fonctionnalite `vulkan` pour cette
+  passe (compilation croisee de `ggml-vulkan` non tentee), par prudence
+  plutot que par limitation confirmee - contrairement au blocage reel et
+  documente d'`ort-sys` pour la diarisation ci-dessous.
+
 ## Diarisation
 
 Whisper ne distingue pas a lui seul les personnes. La diarisation expose une interface stable (module `diarization`, distinct de `transcription`) et reste remplacable si une meilleure implementation locale apparait. Les recouvrements de voix ou les cas ambigus sont signales comme incertains (`segment.status = 'uncertain'`) plutot que forces vers un seul locuteur.

@@ -103,6 +103,53 @@ mod tests {
         assert_eq!(centiseconds_to_ms(150), 1_500);
     }
 
+    /// One-off manual GPU-vs-CPU comparison for the Vulkan backend
+    /// (whisper-rs "vulkan" feature). Loads the same model twice in the same
+    /// process, back to back, once with `use_gpu: true` (whisper-rs's own
+    /// default once any GPU feature is compiled in) and once forced to
+    /// `false` - minimizes noise from unrelated system load versus comparing
+    /// two separate process runs. Not a permanent fixture: temporary
+    /// verification only, and only meaningful on a build actually compiled
+    /// with a GPU backend feature.
+    ///
+    ///   INTERVIEWSCRIBE_TEST_MODEL=/path/to/ggml-base-q5_1.bin \
+    ///   INTERVIEWSCRIBE_TEST_WAV=/path/to/fixture.wav \
+    ///   cargo test --manifest-path src-tauri/Cargo.toml --lib -- --ignored --nocapture gpu_vs_cpu_timing_check
+    #[test]
+    #[ignore]
+    fn gpu_vs_cpu_timing_check() {
+        let model_path = std::env::var("INTERVIEWSCRIBE_TEST_MODEL")
+            .expect("set INTERVIEWSCRIBE_TEST_MODEL to a local ggml model path");
+        let wav_path = std::env::var("INTERVIEWSCRIBE_TEST_WAV")
+            .expect("set INTERVIEWSCRIBE_TEST_WAV to a local wav path");
+        let pcm = crate::audio::decode::decode_to_mono_pcm16k(std::path::Path::new(&wav_path))
+            .expect("failed to decode test wav");
+
+        static LOGGING: std::sync::Once = std::sync::Once::new();
+        LOGGING.call_once(whisper_rs::install_logging_hooks);
+
+        let run_once = |use_gpu: bool| -> std::time::Duration {
+            let mut params = whisper_rs::WhisperContextParameters::default();
+            params.use_gpu(use_gpu);
+            let context = whisper_rs::WhisperContext::new_with_params(&model_path, params)
+                .expect("failed to load model");
+            let mut state = context.create_state().expect("failed to create state");
+            let full_params =
+                whisper_rs::FullParams::new(whisper_rs::SamplingStrategy::Greedy { best_of: 1 });
+            let start = std::time::Instant::now();
+            state.full(full_params, &pcm).expect("transcribe");
+            start.elapsed()
+        };
+
+        let gpu_time = run_once(true);
+        let cpu_time = run_once(false);
+        println!(
+            "gpu_vs_cpu_timing_check: {:.1}s audio -> GPU {gpu_time:?}, CPU {cpu_time:?} (ratio {:.2}x)",
+            pcm.len() as f64 / 16_000.0,
+            cpu_time.as_secs_f64() / gpu_time.as_secs_f64().max(0.001)
+        );
+    }
+
     /// One-off manual timing check for the BeamSearch -> Greedy switch (see
     /// the comment on `transcribe`): confirms a short clip actually finishes
     /// in a reasonable time instead of the 180s+ observed with beam search.

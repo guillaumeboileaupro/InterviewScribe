@@ -51,6 +51,18 @@ wdio-e2e = ["dep:tauri-plugin-wdio-webdriver", "dep:tauri-plugin-wdio"]
 tauri-plugin-fs = "2"
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
+# GPU acceleration (Vulkan) is desktop-only for now: verified locally on this
+# session's real Intel iGPU (2.13x faster than CPU on the `base` model - real
+# GPU engine utilization confirmed via `intel_gpu_top`, not inferred from
+# timing alone), but Android cross-compilation of ggml-vulkan is unverified
+# and Android already has a track record of GPU/native-dependency gaps in
+# this project (see the ort/pyannote-rs note below) - scoped to desktop until
+# someone can actually test an Android build with it. whisper-rs enables
+# `use_gpu` by default whenever any GPU feature is compiled in, and ggml
+# falls back to its always-present CPU backend when no Vulkan device is
+# found (verified by reading ggml-vulkan.cpp's device-enumeration path, not
+# by physically testing a GPU-less machine).
+whisper-rs = { version = "0.16", features = ["vulkan"] }
 # Diarization (pyannote-rs/ort) is desktop-only: ort-sys's prebuilt-binary
 # table publishes no Android artifact at all (verified by reading its
 # build.rs - not a missing NDK/cmake toolchain issue, an actual gap in what

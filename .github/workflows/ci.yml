@@ -23,6 +23,20 @@ jobs:
           components: rustfmt, clippy
       - name: Install Tauri system dependencies
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf cmake clang libasound2-dev
+      # GPU acceleration (whisper-rs "vulkan" feature, desktop-only - see
+      # src-tauri/Cargo.toml) needs a Vulkan SDK newer than this distro ships
+      # (verified by a real failed build locally against Ubuntu 22.04's
+      # package). LunarG's own repository, keyed off the runner's actual
+      # codename since `ubuntu-latest` can move (currently noble/24.04).
+      - name: Install Vulkan SDK
+        run: |
+          set -euo pipefail
+          codename=$(lsb_release -cs)
+          wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc > /dev/null
+          sudo wget -qO "/etc/apt/sources.list.d/lunarg-vulkan-$codename.list" "https://packages.lunarg.com/vulkan/lunarg-vulkan-$codename.list"
+          sudo apt-get update
+          sudo apt-get install -y vulkan-sdk
+          echo "VULKAN_SDK=/usr" >> "$GITHUB_ENV"
       - run: pnpm install --frozen-lockfile
       - name: Run the mandatory project check
         run: pnpm check
@@ -46,6 +60,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Install Tauri and E2E system dependencies
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf cmake clang libasound2-dev xdotool xvfb iptables
+      - name: Install Vulkan SDK
+        run: |
+          set -euo pipefail
+          codename=$(lsb_release -cs)
+          wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc > /dev/null
+          sudo wget -qO "/etc/apt/sources.list.d/lunarg-vulkan-$codename.list" "https://packages.lunarg.com/vulkan/lunarg-vulkan-$codename.list"
+          sudo apt-get update
+          sudo apt-get install -y vulkan-sdk
+          echo "VULKAN_SDK=/usr" >> "$GITHUB_ENV"
       - run: pnpm install --frozen-lockfile
       - name: Prepare bundled Whisper models (checksum verified)
         run: pnpm models:prepare
@@ -74,6 +97,18 @@ jobs:
           node-version: 22
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
+      - name: Install Vulkan SDK
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = "1.4.313.0"
+          $installer = "$env:RUNNER_TEMP\VulkanSDK-Installer.exe"
+          Invoke-WebRequest -Uri "https://sdk.lunarg.com/sdk/download/$version/windows/VulkanSDK-$version-Installer.exe" -OutFile $installer
+          Start-Process -FilePath $installer -ArgumentList "--accept-licenses --default-answer --confirm-command install" -Wait
+          $sdkPath = "C:\VulkanSDK\$version"
+          if (-not (Test-Path $sdkPath)) { throw "Vulkan SDK install did not produce $sdkPath" }
+          echo "VULKAN_SDK=$sdkPath" >> $env:GITHUB_ENV
+          echo "$sdkPath\Bin" >> $env:GITHUB_PATH
       - run: pnpm install --frozen-lockfile
       - name: Prepare bundled Whisper models (checksum verified)
         run: pnpm models:prepare
