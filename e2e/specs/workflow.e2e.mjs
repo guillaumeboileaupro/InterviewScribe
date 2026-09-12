@@ -44,11 +44,20 @@ describe("InterviewScribe core workflow", () => {
     await newInterview.waitForExist({ timeout: 10000 });
     await newInterview.click();
 
+    // KNOWN UNRESOLVED (found 12 septembre 2026, after fixing the page-
+    // navigation bug above): this next step - selecting "file" then finding
+    // "Choisir un fichier audio" - now fails in real CI with "element
+    // (button*=Choisir un fichier audio) still not existing after 10000ms".
+    // It was never reached before today (the navigation bug above always
+    // failed first), so this may be a second, separate pre-existing issue,
+    // not a regression from today's changes - not yet root-caused with a
+    // real local run (the release build needed for that is too slow to
+    // chase here). Worth a focused pass before trusting this test again.
     const modeSelect = await $("select");
     await modeSelect.waitForExist({ timeout: 10000 });
     await modeSelect.selectByAttribute("value", "file");
 
-    // Base model: fastest of the three bundled models, keeps this test
+    // Base model: fastest of the now six bundled models, keeps this test
     // reasonable to run repeatedly.
     const modelSelect = await $('//label[contains(., "Modèle")]/select');
     await modelSelect.waitForExist({ timeout: 10000 });
