@@ -32,15 +32,23 @@ describe("InterviewScribe desktop app", () => {
     const heading = await $("h1=Réglages");
     await heading.waitForDisplayed({ timeout: 10000 });
 
-    // The 575MB bundled model is re-verified by full SHA-256 on every check
-    // (transcription/model.rs::verify_model) - genuinely slow, not flaky.
+    // Reglages verifies and displays the *default* model (Base, ~60MB -
+    // transcription/model::ensure_model() hardcodes base_manifest(), not
+    // whatever the user could pick on the Preparation page), re-verified by
+    // full SHA-256 on every check (transcription/model.rs::verify_model) -
+    // still worth a generous timeout even though Base is much smaller than
+    // Large v3 Turbo. This assertion used to check for "Whisper Large v3
+    // Turbo (Q5_0)" - stale since the default model was switched to Base
+    // for speed (docs/ARCHITECTURE.md "Modele fourni avec l'application",
+    // 10 septembre 2026) without updating this test, which is exactly why
+    // it had been failing on every run since.
     // getText() + includes() sidesteps `*=` locator quirks against nested
     // text nodes (verified: the exact same text is present in body innerText
     // well before this locator strategy would ever match it).
     await browser.waitUntil(
       async () => {
         const text = await $("main").getText();
-        return text.includes("Whisper Large v3 Turbo (Q5_0)");
+        return text.includes("Whisper Base (Q5_1)");
       },
       {
         timeout: 45000,

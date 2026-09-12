@@ -26,6 +26,20 @@ describe("InterviewScribe core workflow", () => {
   });
 
   it("imports, transcribes, exports and deletes an interview end to end", async () => {
+    // wdio runs every *.e2e.mjs file in one shared session/app instance
+    // (maxInstances: 1, single capability - see wdio.conf.mjs), not a fresh
+    // launch per file: this spec runs after smoke.e2e.mjs, which leaves the
+    // app on Reglages (its own last test navigates there and never back).
+    // Never assume a starting page - navigate explicitly first, the same
+    // defensive pattern smoke.e2e.mjs's own goToLibrary() already uses.
+    // This is exactly why this test had been failing on every run: it used
+    // to assume the app was already on the library page.
+    const libraryNav = await $("button=Mes entretiens");
+    await libraryNav.waitForExist({ timeout: 20000 });
+    await libraryNav.click();
+    const libraryHeading = await $("h1=Mes entretiens");
+    await libraryHeading.waitForDisplayed({ timeout: 10000 });
+
     const newInterview = await $("button*=Nouvel entretien");
     await newInterview.waitForExist({ timeout: 10000 });
     await newInterview.click();
