@@ -26,6 +26,13 @@ pub fn manifest() -> Result<ModelManifest, AppError> {
         .map_err(|err| AppError::Model(format!("description du modele invalide: {err}")))
 }
 
+fn medium_manifest() -> Result<ModelManifest, AppError> {
+    serde_json::from_str(include_str!(
+        "../../resources/models/whisper-medium-manifest.json"
+    ))
+    .map_err(|err| AppError::Model(format!("description du modele invalide: {err}")))
+}
+
 fn small_manifest() -> Result<ModelManifest, AppError> {
     serde_json::from_str(include_str!(
         "../../resources/models/whisper-small-manifest.json"
@@ -40,16 +47,26 @@ fn base_manifest() -> Result<ModelManifest, AppError> {
     .map_err(|err| AppError::Model(format!("description du modele invalide: {err}")))
 }
 
+fn tiny_manifest() -> Result<ModelManifest, AppError> {
+    serde_json::from_str(include_str!(
+        "../../resources/models/whisper-tiny-manifest.json"
+    ))
+    .map_err(|err| AppError::Model(format!("description du modele invalide: {err}")))
+}
+
 /// One entry per Whisper transcription model the user can pick between (see
 /// docs/PRODUCT.md): id is stable across releases and is what the frontend
 /// sends back to select a model - never the display name, which can change.
-const WHISPER_MODEL_IDS: [&str; 3] = ["base", "small", "large-v3-turbo"];
+/// Ordered smallest/fastest to largest/most accurate for the picker.
+const WHISPER_MODEL_IDS: [&str; 5] = ["tiny", "base", "small", "medium", "large-v3-turbo"];
 
 fn whisper_manifest_by_id(id: &str) -> Result<ModelManifest, AppError> {
     match id {
         "large-v3-turbo" => manifest(),
+        "medium" => medium_manifest(),
         "small" => small_manifest(),
         "base" => base_manifest(),
+        "tiny" => tiny_manifest(),
         other => Err(AppError::Model(format!("modele inconnu: {other}"))),
     }
 }
@@ -267,13 +284,26 @@ mod tests {
     }
 
     #[test]
-    fn lists_all_three_bundled_whisper_models_with_valid_manifests() {
+    fn lists_all_five_bundled_whisper_models_with_valid_manifests() {
         let models = list_whisper_models().unwrap();
         let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
-        assert_eq!(ids, ["base", "small", "large-v3-turbo"]);
+        assert_eq!(ids, ["tiny", "base", "small", "medium", "large-v3-turbo"]);
         for model in &models {
             assert!(model.size_mb > 0);
             assert!(!model.name.is_empty());
+        }
+        // Smallest to largest, matching the picker's intended order - not
+        // just present, but sized the way a "fastest to most accurate"
+        // ordering implies.
+        for pair in models.windows(2) {
+            assert!(
+                pair[0].size_mb < pair[1].size_mb,
+                "{} ({} Mo) should be smaller than {} ({} Mo)",
+                pair[0].id,
+                pair[0].size_mb,
+                pair[1].id,
+                pair[1].size_mb
+            );
         }
     }
 

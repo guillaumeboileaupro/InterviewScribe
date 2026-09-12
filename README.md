@@ -60,4 +60,4 @@ pnpm models:prepare   # telecharge les modeles (connexion necessaire uniquement 
 pnpm tauri dev
 ```
 
-`pnpm models:prepare` recupere Whisper Large v3 Turbo Q5_0 et, pour le bureau, le modele d'empreintes vocales WeSpeaker CAM++ (diarisation). `pnpm models:verify` controle leur taille et leur SHA-256; c'est fait automatiquement avant tout build natif. Ces fichiers ne doivent jamais etre ajoutes a Git. Les workflows GitHub Actions preparent les modeles avant de construire les installateurs et l'APK, et verifient reellement l'installation/desinstallation (Windows, Linux) avant publication.
+`pnpm models:prepare` recupere tous les modeles Whisper selectionnables (Tiny, Base, Small, Medium, Large v3 Turbo Q5_0) et, pour le bureau, le modele d'empreintes vocales WeSpeaker CAM++ (diarisation). `pnpm models:verify` controle leur taille et leur SHA-256; c'est fait automatiquement avant tout build natif. Ces fichiers ne doivent jamais etre ajoutes a Git. Les workflows GitHub Actions preparent les modeles avant de construire les installateurs et l'APK, et verifient reellement l'installation/desinstallation (Windows, Linux) avant publication.
